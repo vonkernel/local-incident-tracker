@@ -18,94 +18,73 @@ cd infrastructure && docker-compose up -d
 
 ---
 
-## System Composition
+## System Overview
 
 ### Core Services
-| Service | Role | Input | Output | Tech                               |
-|---------|------|-------|--------|------------------------------------|
-| **collector** | Data acquisition | Yonhapnews API | PostgreSQL(articles) | HTTP client, Spring Boot           |
-| **analyzer** | Data enrichment | Kafka queue | PostgreSQL(analysis) | Kafka consumer, NLP(LLM)/geocoding |
-| **indexer** | Search indexing | Kafka queue | OpenSearch | Kafka consumer, Opensearch client |
-| **searcher** | Query interface | REST API | Search results | REST API, Opensearch queries               |
+| Service | Purpose | Input → Output |
+|---------|---------|-----------------|
+| **collector** | Acquires incident data from external sources | Yonhapnews API → PostgreSQL |
+| **analyzer** | Enriches articles with AI-powered analysis | Kafka(Article events) → PostgreSQL + Outbox |
+| **indexer** | Indexes analysis results for search | Kafka(AnalysisResult events) → OpenSearch |
+| **searcher** | Provides REST API for searching incidents | REST API ← OpenSearch |
 
-### Infrastructure
-| Component | Purpose | Access                     |
-|-----------|---------|----------------------------|
-| **PostgreSQL** | Single source of truth (transactional data + analysis results) | JPA                        |
-| **Kafka** | Event stream for CDC changes | Spring Kafka consumers     |
-| **Debezium** | Captures DB changes & publishes events | Embedded in infrastructure |
-| **OpenSearch** | Read-optimized search index | REST client                |
+### Infrastructure Components
+| Component | Role | Key Point |
+|-----------|------|-----------|
+| **PostgreSQL** | Single source of truth for all transactional data | Write model (CQRS) |
+| **Kafka + Debezium** | CDC-based event streaming from DB changes | Event-driven coupling |
+| **AnalysisResult Table** | Acts as transactional outbox for analyzer events | Guarantees at-least-once delivery |
+| **OpenSearch** | Read-optimized search index | Read model (CQRS) |
 
 ---
 
-## Component Relationships
+## Architecture & Data Flow
 
-### Data Flow Chain
+### End-to-End Data Pipeline
 ```
-External API
+Yonhapnews API
     ↓
-[collector] ← REST calls
-    ↓ (write)
+[collector] → normalize & validate
+    ↓ (INSERT Article)
 PostgreSQL (articles table)
-    ↓ (CDC detects insert)
-Debezium
-    ↓ (publishes change event)
-Kafka Topic: articles-changes
-    ↓ (poll events)
-[analyzer] → NLP/geocoding/classification
-    ↓ (write analysis results)
-PostgreSQL (analysis tables)
-    ↓ (CDC detects insert)
-Debezium
-    ↓ (publishes change event)
-Kafka Topic: analysis-changes
-    ↓ (poll events)
-[indexer] → Build search document
-    ↓ (index)
+    ↓
+Debezium CDC
+    ↓ (publishes)
+Kafka (article-events topic)
+    ↓
+[analyzer] → Parallel LLM analysis + Kakao geocoding
+    ↓ (INSERT to multiple analysis tables)
+PostgreSQL (disaster_type_analysis, location_analysis,
+            urgency_analysis, keywords_analysis, ...)
+    ↓ (aggregate in transaction)
+INSERT AnalysisResult (acts as outbox)
+    ↓
+Debezium CDC (from AnalysisResult)
+    ↓ (publishes)
+Kafka (analysis-events topic)
+    ↓
+[indexer] → build search document
+    ↓ (indexes)
 OpenSearch
-    ↓ (query)
-[searcher] ← REST API calls
+    ↓
+[searcher] ← REST API queries
     ↓
 User
 ```
 
-### Dependency Relationships
+### Data Models
 ```
-[shared] ← Common data models
-  ↑
-  ├─ [collector] depends on shared
-  ├─ [analyzer] depends on shared
-  ├─ [indexer] depends on shared
-  └─ [searcher] depends on shared
+Article (shared, PostgreSQL)
+  ├─ id, title, body, createdAt, sourceUrl
+  └─ Source: collector, Consumed by: analyzer
 
-[collector] depends on PostgreSQL + external API
-[analyzer] depends on PostgreSQL + Kafka consumer
-[indexer] depends on Kafka consumer + OpenSearch client
-[searcher] depends on OpenSearch client
-```
+AnalysisResult (shared, PostgreSQL)
+  ├─ article_id, disaster_type, location, urgency, keywords
+  └─ Source: analyzer, Consumed by: indexer
 
-### Data Model Relationships
-```
-Article (shared)
-  └─ Used by: collector (output), analyzer (input)
-  └─ Stored in: PostgreSQL
-  └─ Fields: id, title, body, createdAt, sourceUrl
-
-        ↓ (CDC event via Kafka)
-
-AnalysisResult (shared)
-  └─ Created by: analyzer
-  └─ Stored in: PostgreSQL
-  └─ Contains: disaster_type, location, urgency, keywords
-  └─ Used by: indexer (input)
-
-        ↓ (CDC event via Kafka)
-
-ArticleIndexDocument (shared)
-  └─ Created by: indexer
-  └─ Stored in: OpenSearch
-  └─ Optimized for: searcher queries
-  └─ Contains: searchable fields + filter fields + geo fields
+ArticleIndexDocument (shared, OpenSearch)
+  ├─ searchable content, filter facets, geographic data
+  └─ Source: indexer, Consumed by: searcher
 ```
 
 ---
@@ -126,19 +105,56 @@ ArticleIndexDocument (shared)
 ## Key Architectural Patterns
 
 ### CQRS (Command Query Responsibility Segregation)
-- **Write Model**: PostgreSQL (source of truth)
-- **Read Model**: OpenSearch (optimized for search)
-- **Sync**: Kafka events from CDC
+- **Write Model**: PostgreSQL (transactional source of truth)
+- **Read Model**: OpenSearch (denormalized search index)
+- **Sync**: CDC-based eventual consistency via Kafka
 
-### Event-Driven Architecture
-- Service A writes → triggers DB event → CDC captures → Kafka publishes → Service B consumes
-- Services are loosely coupled through event streams
-- No direct service-to-service communication
+### Event-Driven Architecture with CDC
+- Every DB write automatically triggers a CDC event
+- Debezium captures table changes and publishes to Kafka
+- Services consume events asynchronously, no direct calls
+- Loose coupling enables independent scaling and deployment
+
+### Outbox Pattern (Analyzer Service)
+**Problem**: Ensuring multiple concurrent analysis results are reliably published to Kafka as a single atomic event
+
+**Solution**: AnalysisResult table serves as the outbox
+- Multiple analyses (disaster_type, location, urgency, keywords, etc.) are performed via LLM
+- Each analysis result stored in its own table (disaster_analysis, location_analysis, etc.)
+- AnalysisResult aggregates all these analyses in a single transaction
+- AnalysisResult INSERT acts as the CDC trigger for Kafka publication
+
+**Flow**:
+```
+Analyzer receives Article event
+  ↓
+Concurrent LLM analysis tasks:
+  ├─ disaster_type_analysis (INSERT)
+  ├─ location_analysis (INSERT)
+  ├─ urgency_analysis (INSERT)
+  ├─ keywords_analysis (INSERT)
+  └─ ... other analyses ...
+  ↓
+BEGIN TRANSACTION
+  └─ INSERT AnalysisResult (aggregate all results)
+COMMIT
+  ↓
+Debezium detects AnalysisResult insert (CDC)
+  ↓
+Publishes AnalysisEvent → Kafka
+  ↓
+Indexer consumes event → builds search document
+```
+
+**Key Benefits**:
+- Transactional guarantee: All analyses committed together or not at all
+- At-least-once delivery: Kafka gets event whenever AnalysisResult is committed
+- No orphaned analysis rows: All individual analyses tied to one AnalysisResult
 
 ### Polyglot Persistence
-- PostgreSQL: Transactional consistency
-- OpenSearch: Full-text search performance
-- Synchronized via CDC + Kafka
+- PostgreSQL: ACID compliance, transactional consistency
+- OpenSearch: Full-text search, geo-spatial queries, fast retrieval
+- Each optimized for its use case, synchronized via events
 
 ---
 
@@ -159,13 +175,26 @@ ArticleIndexDocument (shared)
 
 ### `analyzer`
 **Input**: Article events from Kafka
-**Output**: AnalysisResult → PostgreSQL
-**Process**:
-- Classify disaster types
-- Geocode addresses (Kakao API)
-- Extract keywords
-- Calculate urgency
-**Triggers**: IndexDocument → Indexer (via CDC/Kafka)
+**Output**: AnalysisResult → PostgreSQL (serves as outbox)
+
+**Analysis Pipeline** (LLM-driven):
+1. **LLM Analysis** (parallel tasks):
+   - Disaster type classification → `disaster_type_analysis` table
+   - Location extraction & entity linking → `location_analysis` table
+   - Urgency/severity assessment → `urgency_analysis` table
+   - Keyword extraction & tagging → `keywords_analysis` table
+   - (Additional analyses as needed) → respective tables
+
+2. **Geocoding** (external API):
+   - Kakao API: Convert extracted locations → geographic coordinates
+   - Results stored separately for geo-spatial search
+
+3. **Aggregate & Commit**:
+   - All individual analysis results + geocoding combined into single AnalysisResult
+   - Single transaction: AnalysisResult INSERT triggers Debezium CDC event
+   - Kafka publishes AnalysisEvent for indexer consumption
+
+**Transactional Guarantee**: All analyses succeed together or rollback together
 
 ### `indexer`
 **Input**: AnalysisResult events from Kafka
