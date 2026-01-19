@@ -94,6 +94,10 @@ local-incident-tracker/
 ├── README.md
 ├── REQUIREMENTS.md               # 프로젝트 요구사항
 │
+├── shared/                       # 공유 데이터 모델 (모든 서비스에서 사용)
+│   ├── build.gradle.kts
+│   └── src/
+│
 ├── collector/                    # 데이터 수집기 서비스
 │   ├── build.gradle.kts
 │   └── src/
@@ -116,7 +120,51 @@ local-incident-tracker/
         └── connectors/
 ```
 
+## 공유 데이터 모델
+
+각 서비스 간의 통신과 데이터 공유를 위해 다음과 같은 POJO 클래스들이 `shared` 모듈에서 정의되며, 모든 서비스에서 공통으로 사용됩니다.
+
+### Article (기사 데이터)
+
+**데이터 흐름**: Collector → RDBMS → Analyzer
+
+사건사고 원본 기사 정보를 표현하는 클래스입니다. Collector가 연합뉴스 API에서 수집한 데이터를 정규화하여 생성하고, RDBMS에 저장된 후 Analyzer에서 분석을 위해 소비됩니다.
+
+**주요 필드**:
+- 기본 정보: 기사 ID, 제목, 본문 내용, 생성 시간
+
+### AnalysisResult (분석 결과)
+
+**데이터 흐름**: Analyzer → RDBMS → Indexer
+
+Article에 대해 분석을 수행한 결과를 표현하는 클래스입니다. Analyzer가 생성하여 RDBMS에 저장하고, Indexer에서 수신하여 Search Engine으로 색인합니다.
+
+**주요 필드**:
+- 분석 결과: 재해 유형 분류, 정제된 주소/위치 정보, 위급도
+- 위치 정보: 좌표(위도/경도), 법정동코드, 지역 계층 정보
+- 정제 데이터: 추출된 키워드, 정제된 텍스트, 요약
+
+### ArticleIndexDocument (검색 인덱스 문서)
+
+**데이터 흐름**: Indexer → OpenSearch ← Searcher
+
+OpenSearch에서 효율적인 검색과 필터링을 위해 최적화된 구조로 변환한 문서입니다. Indexer에서 생성하여 Search Engine으로 색인되고, Searcher가 검색 쿼리 처리 시 활용합니다.
+
+**주요 필드**:
+- 검색 필드: 제목, 본문(분석됨), 키워드
+- 필터 필드: 재해 유형, 발생 날짜, 지역(법정동코드)
+- 지리 필드: 위치 정보 (geo-point, 법정구역 계층)
+- 순위 필드: 위치 정보, 발생 시간, 위급도
+
 ## 서브모듈
+
+### shared (공유 데이터 모델)
+모든 서비스에서 공통으로 사용하는 POJO 데이터 모델을 정의합니다. 각 서비스는 이 모듈에 의존하여 타입 안전성과 일관성을 보장받습니다.
+
+정의되는 클래스:
+- **Article**: 원본 기사 데이터 (Collector → RDBMS → Analyzer)
+- **AnalysisResult**: 분석 결과 데이터 (Analyzer → RDBMS → Indexer)
+- **ArticleIndexDocument**: 검색 인덱스 최적화 문서 (Indexer → OpenSearch ← Searcher)
 
 ### collector (데이터 수집기 - 데이터 파이프라인)
 연합뉴스 재난 API에서 지정된 날짜로부터 실시간 사건사고 데이터를 수집하여 정규화하고 PostgreSQL에 저장합니다.
