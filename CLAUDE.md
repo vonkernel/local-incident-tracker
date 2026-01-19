@@ -248,6 +248,45 @@ Indexer consumes event → builds search document
 - **PostgreSQL** is the single source of truth (OpenSearch is derived)
 - **Analyzer** is the only service that enriches data (no enrichment in collector/indexer)
 - **Searcher** never writes to any persistent storage
+- **Transactional guarantee**: All analyzer results (individual analysis tables + AnalysisResult) must commit atomically
+- **Event ordering**: CDC events maintain insertion order per table
+- **Idempotency**: Services should handle duplicate events gracefully
+
+---
+
+## Development Guidelines
+
+### Adding New Analysis Types
+
+When extending analyzer with new analysis:
+
+1. **Create dedicated table** for results (e.g., `sentiment_analysis`)
+2. **Perform analysis** in parallel with existing tasks
+3. **Store results** in transaction before committing AnalysisResult
+4. **Update AnalysisResult** model to include new field
+5. **Verify CDC** captures changes correctly
+
+### Scaling Considerations
+
+**Analyzer bottleneck?**
+- LLM analysis is typically the bottleneck
+- Consider: LLM batching, rate limiting, async invocation patterns
+- Monitor: Queue depth, processing latency per article
+
+**Indexer bottleneck?**
+- Optimize OpenSearch mapping for your query patterns
+- Consider: Index settings, refresh interval tuning
+- Monitor: Indexing latency, query performance
+
+**Database bottleneck?**
+- Monitor: Connection pool, long-running queries, CDC lag
+- Consider: Query optimization, appropriate indexing
+
+### Event Processing Guarantees
+
+- **At-least-once delivery**: Events may be replayed, ensure idempotency
+- **Eventual consistency**: Read model (OpenSearch) may lag write model (PostgreSQL)
+- **Event ordering**: Per-table ordering guaranteed, but multi-table events not totally ordered
 
 ---
 
