@@ -174,7 +174,7 @@ Kafka로 전달된 분석 결과를 수신하여 OpenSearch로 색인합니다.
 
    이 명령으로 다음이 실행됩니다:
    - PostgreSQL 18
-   - Kafka 3.8 (Zookeeper 포함)
+   - Kafka 3.8
    - OpenSearch 3.3
    - Debezium 3.4 (PostgreSQL 커넥터 포함)
 
