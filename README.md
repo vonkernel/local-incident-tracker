@@ -159,9 +159,12 @@ local-incident-tracker/
 Article에 대해 분석을 수행한 결과를 표현하는 클래스입니다. Analyzer가 생성하여 RDBMS에 저장하고, Indexer에서 수신하여 Search Engine으로 색인합니다.
 
 **주요 필드**:
-- 분석 결과: 재해 유형 분류, 정제된 주소/위치 정보, 위급도
-- 위치 정보: 좌표(위도/경도), 법정동코드, 지역 계층 정보
-- 정제 데이터: 추출된 키워드, 정제된 텍스트, 요약
+- 기본 정보: articleId
+- 분석 결과: incidentTypes (여러 재난 유형 가능), urgency (긴급도)
+- 위치 정보: locations (List<Location>)
+  - Location: coordinate (Coordinate: lat, lon) + addresses (List<Address>)
+  - Address: regionType, code, addressName, depth1Name, depth2~4Name (optional)
+- 정제 데이터: keywords (List<String>)
 
 ### ArticleIndexDocument (검색 인덱스 문서)
 
@@ -170,10 +173,13 @@ Article에 대해 분석을 수행한 결과를 표현하는 클래스입니다.
 OpenSearch에서 효율적인 검색과 필터링을 위해 최적화된 구조로 변환한 문서입니다. Indexer에서 생성하여 Search Engine으로 색인되고, Searcher가 검색 쿼리 처리 시 활용합니다.
 
 **주요 필드**:
-- 검색 필드: 제목, 본문(분석됨), 키워드
-- 필터 필드: 재해 유형, 발생 날짜, 지역(법정동코드)
-- 지리 필드: 위치 정보 (geo-point, 법정구역 계층)
-- 순위 필드: 위치 정보, 발생 시간, 위급도
+- 문서 식별자: articleId, sourceId, originId
+- 검색 필드: title, content, keywords (Full-text indexed), contentEmbedding (ByteArray[128], semantic search)
+- 지리 정보:
+  - geoPoints: List<Coordinate> (평탄화된 geo-point, OpenSearch geo_point 형식)
+  - addresses: List<Address> (nested docs, 계층 구조 유지)
+  - jurisdictionCodes: Set<String> (법정동코드)
+- 순위 필드: writtenAt, modifiedAt (ZonedDateTime, zone 정보 포함)
 
 ## 서브모듈
 

@@ -91,11 +91,20 @@ Article (shared, PostgreSQL)
   └─ Source: collector, Consumed by: analyzer
 
 AnalysisResult (shared, PostgreSQL)
-  ├─ article_id, disaster_type, location, urgency, keywords
+  ├─ articleId, incidentTypes (Set), urgency, keywords (List), locations (List)
+  │  ├─ Location: coordinate (lat, lon), addresses (List)
+  │  └─ Address: regionType, code, addressName, depth1Name, [depth2~4Name]
   └─ Source: analyzer, Consumed by: indexer
 
 ArticleIndexDocument (shared, OpenSearch)
-  ├─ searchable content, filter facets, geographic data
+  ├─ 문서 식별자: articleId, sourceId, originId
+  ├─ 검색 필드: title, content, keywords (Full-text indexed), contentEmbedding (ByteArray[128], semantic search)
+  ├─ 필터 및 집계: incidentTypes (Set), urgency, incidentDate (ZonedDateTime)
+  ├─ 지리 정보:
+  │  ├─ geoPoints: List<Coordinate> (평탄화된 geo-point)
+  │  ├─ addresses: List<Address> (nested docs)
+  │  └─ jurisdictionCodes: Set<String>
+  ├─ 순위 필드: writtenAt, modifiedAt (ZonedDateTime)
   └─ Source: indexer, Consumed by: searcher
 ```
 
@@ -233,7 +242,7 @@ Indexer consumes event → builds search document
 | **Text Search**         | title, body, keywords | Full-text indexed in OpenSearch |
 | **Location (Code)**     | jurisdiction_code | Exact match filter |
 | **Location (Distance)** | coordinates | Geo-distance query + boost by distance |
-| **Category**            | disaster_type | Faceted filter (35+ types) |
+| **Category**            | incidentTypes | Faceted filter (35+ types) |
 | **Temporal**            | incident_date | Range filter |
 | **Ranking**             | urgency, distance, date | Multi-factor scoring |
 
