@@ -302,4 +302,4 @@ When extending analyzer with new analysis:
 
 ---
 
-**Tech Stack**: JDK 21 | Kotlin 2.21 | Spring Boot 4.0 | PostgreSQL 18 | Kafka 3.8 | Debezium 3.4 | OpenSearch 3.3
+**Tech Stack**: JDK 21 | Kotlin 2.2 | Spring Boot 4.0 | PostgreSQL 18 | Kafka 3.8 | Debezium 3.4 | OpenSearch 3.3
