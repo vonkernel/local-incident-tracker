@@ -1,5 +1,17 @@
 # Local Incident Tracker - Development Guide
 
+## Architecture & Development Principles
+
+All development follows the principles and patterns defined in `ARCHITECTURE.md`:
+- OOP + FP Hybrid Strategy with Spring component lifecycle management
+- Hexagonal + CQRS + Event-Driven architecture
+- Test-Driven Development (TDD) with interface-first design
+- Pure functional domain logic with coroutine-based concurrency
+
+**Reference**: See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for detailed architecture, component hierarchy, development flow (Phase 1-3), and implementation patterns.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -290,4 +302,4 @@ When extending analyzer with new analysis:
 
 ---
 
-**Tech Stack**: JDK 21 | Kotlin 2.21 | Spring Boot 4.0 | PostgreSQL 18 | Kafka 3.8 | Debezium 3.4 | OpenSearch 3.3
+**Tech Stack**: JDK 21 | Kotlin 2.2 | Spring Boot 4.0 | PostgreSQL 18 | Kafka 3.8 | Debezium 3.4 | OpenSearch 3.3
