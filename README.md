@@ -149,7 +149,8 @@ local-incident-tracker/
 사건사고 원본 기사 정보를 표현하는 클래스입니다. Collector가 연합뉴스 API에서 수집한 데이터를 정규화하여 생성하고, RDBMS에 저장된 후 Analyzer에서 분석을 위해 소비됩니다.
 
 **주요 필드**:
-- 기본 정보: 기사 ID, 제목, 본문 내용, 생성 시간
+- 기본 정보: articleId, originId, sourceId, title, content, writtenAt, modifiedAt
+- 선택 정보: sourceUrl (기본값: null)
 
 ### AnalysisResult (분석 결과)
 

@@ -87,7 +87,7 @@ User
 ### Data Models
 ```
 Article (shared, PostgreSQL)
-  ├─ id, title, body, createdAt, sourceUrl
+  ├─ articleId, originId, sourceId, title, content, writtendAt, modifiedAt, sourceUrl(optional)
   └─ Source: collector, Consumed by: analyzer
 
 AnalysisResult (shared, PostgreSQL)
