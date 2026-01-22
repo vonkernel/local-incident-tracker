@@ -2,6 +2,7 @@ package com.vonkernel.lit.persistence.entity.analysis
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -17,36 +18,44 @@ import java.time.ZonedDateTime
         UniqueConstraint(columnNames = ["region_type", "code"], name = "uk_address_region_code")
     ]
 )
-data class AddressEntity(
+class AddressEntity(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
-    val id: Long? = null,
+    var id: Long? = null,
 
     @Column(name = "region_type", length = 1, nullable = false)
-    val regionType: String,
+    var regionType: String,
 
     @Column(name = "code", length = 100, nullable = false)
-    val code: String,
+    var code: String,
 
     @Column(name = "address_name", length = 500, nullable = false)
-    val addressName: String,
+    var addressName: String,
 
     @Column(name = "depth1_name", length = 255)
-    val depth1Name: String? = null,
+    var depth1Name: String? = null,
 
     @Column(name = "depth2_name", length = 255)
-    val depth2Name: String? = null,
+    var depth2Name: String? = null,
 
     @Column(name = "depth3_name", length = 255)
-    val depth3Name: String? = null,
+    var depth3Name: String? = null,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: ZonedDateTime = ZonedDateTime.now(),
+    var createdAt: ZonedDateTime = ZonedDateTime.now(),
 
     @Column(name = "updated_at", nullable = false)
-    val updatedAt: ZonedDateTime = ZonedDateTime.now(),
+    var updatedAt: ZonedDateTime = ZonedDateTime.now(),
 
-    @OneToOne(mappedBy = "address")
-    val coordinate: AddressCoordinateEntity? = null
-)
+    @OneToOne(mappedBy = "address", fetch = FetchType.LAZY, optional = true)
+    var coordinate: AddressCoordinateEntity? = null
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is AddressEntity) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int = id?.hashCode() ?: 0
+}

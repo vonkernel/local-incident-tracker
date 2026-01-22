@@ -9,21 +9,43 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
+import jakarta.persistence.OneToMany
+import jakarta.persistence.OneToOne
 import jakarta.persistence.Table
 import java.time.ZonedDateTime
 
 @Entity
 @Table(name = "analysis_result")
-data class AnalysisResultEntity(
+class AnalysisResultEntity(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
-    val id: Long? = null,
+    var id: Long? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "article_id", nullable = false, unique = true)
-    val article: ArticleEntity,
+    var article: ArticleEntity? = null,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: ZonedDateTime = ZonedDateTime.now()
-)
+    var createdAt: ZonedDateTime = ZonedDateTime.now(),
+
+    @OneToOne(mappedBy = "analysisResult", fetch = FetchType.LAZY)
+    var urgencyMapping: UrgencyMappingEntity? = null,
+
+    @OneToMany(mappedBy = "analysisResult", fetch = FetchType.LAZY)
+    var incidentTypeMappings: MutableSet<IncidentTypeMappingEntity> = mutableSetOf(),
+
+    @OneToMany(mappedBy = "analysisResult", fetch = FetchType.LAZY)
+    var addressMappings: MutableSet<AddressMappingEntity> = mutableSetOf(),
+
+    @OneToMany(mappedBy = "analysisResult", fetch = FetchType.LAZY)
+    var keywords: MutableSet<ArticleKeywordEntity> = mutableSetOf()
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is AnalysisResultEntity) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int = id?.hashCode() ?: 0
+}

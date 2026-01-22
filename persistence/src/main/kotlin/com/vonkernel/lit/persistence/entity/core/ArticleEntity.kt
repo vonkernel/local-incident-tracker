@@ -8,35 +8,43 @@ import java.time.ZonedDateTime
 
 @Entity
 @Table(name = "article")
-data class ArticleEntity(
+class ArticleEntity(
     @Id
     @Column(name = "article_id", length = 255)
-    val articleId: String,
+    var articleId: String,
 
     @Column(name = "origin_id", length = 255, nullable = false)
-    val originId: String,
+    var originId: String,
 
     @Column(name = "source_id", length = 255, nullable = false)
-    val sourceId: String,
+    var sourceId: String,
 
     @Column(name = "written_at", nullable = false)
-    val writtenAt: ZonedDateTime,
+    var writtenAt: ZonedDateTime,
 
     @Column(name = "modified_at", nullable = false)
-    val modifiedAt: ZonedDateTime,
+    var modifiedAt: ZonedDateTime,
 
     @Column(name = "title", nullable = false, columnDefinition = "TEXT")
-    val title: String,
+    var title: String,
 
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
-    val content: String,
+    var content: String,
 
     @Column(name = "source_url", length = 2048)
-    val sourceUrl: String? = null,
+    var sourceUrl: String? = null,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: ZonedDateTime = ZonedDateTime.now(),
+    var createdAt: ZonedDateTime = ZonedDateTime.now(),
 
     @Column(name = "updated_at", nullable = false)
-    val updatedAt: ZonedDateTime = ZonedDateTime.now()
-)
+    var updatedAt: ZonedDateTime = ZonedDateTime.now()
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ArticleEntity) return false
+        return articleId == other.articleId
+    }
+
+    override fun hashCode(): Int = articleId.hashCode()
+}

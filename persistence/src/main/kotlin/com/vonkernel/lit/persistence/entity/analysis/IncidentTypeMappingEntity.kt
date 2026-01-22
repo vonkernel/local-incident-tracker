@@ -20,20 +20,28 @@ import java.time.ZonedDateTime
         UniqueConstraint(columnNames = ["analysis_result_id", "incident_type_id"], name = "uk_incident_type_mapping")
     ]
 )
-data class IncidentTypeMappingEntity(
+class IncidentTypeMappingEntity(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
-    val id: Long? = null,
+    var id: Long? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "analysis_result_id", nullable = false)
-    val analysisResult: AnalysisResultEntity,
+    var analysisResult: AnalysisResultEntity? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "incident_type_id", nullable = false)
-    val incidentType: IncidentTypeEntity,
+    var incidentType: IncidentTypeEntity? = null,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: ZonedDateTime = ZonedDateTime.now()
-)
+    var createdAt: ZonedDateTime = ZonedDateTime.now()
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is IncidentTypeMappingEntity) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int = id?.hashCode() ?: 0
+}

@@ -10,21 +10,29 @@ import java.time.ZonedDateTime
 
 @Entity
 @Table(name = "incident_type")
-data class IncidentTypeEntity(
+class IncidentTypeEntity(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
-    val id: Long? = null,
+    var id: Long? = null,
 
     @Column(name = "code", length = 50, nullable = false, unique = true)
-    val code: String,
+    var code: String,
 
     @Column(name = "name", length = 100, nullable = false)
-    val name: String,
+    var name: String,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: ZonedDateTime = ZonedDateTime.now(),
+    var createdAt: ZonedDateTime = ZonedDateTime.now(),
 
     @Column(name = "updated_at", nullable = false)
-    val updatedAt: ZonedDateTime = ZonedDateTime.now()
-)
+    var updatedAt: ZonedDateTime = ZonedDateTime.now()
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is IncidentTypeEntity) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int = id?.hashCode() ?: 0
+}

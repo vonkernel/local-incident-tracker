@@ -13,22 +13,30 @@ import java.time.ZonedDateTime
 
 @Entity
 @Table(name = "article_keywords")
-data class ArticleKeywordEntity(
+class ArticleKeywordEntity(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
-    val id: Long? = null,
+    var id: Long? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "analysis_result_id", nullable = false)
-    val analysisResult: AnalysisResultEntity,
+    var analysisResult: AnalysisResultEntity? = null,
 
     @Column(name = "keyword", length = 500, nullable = false)
-    val keyword: String,
+    var keyword: String,
 
     @Column(name = "priority", nullable = false)
-    val priority: Int,
+    var priority: Int,
 
     @Column(name = "created_at", nullable = false)
-    val createdAt: ZonedDateTime = ZonedDateTime.now()
-)
+    var createdAt: ZonedDateTime = ZonedDateTime.now()
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ArticleKeywordEntity) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int = id?.hashCode() ?: 0
+}

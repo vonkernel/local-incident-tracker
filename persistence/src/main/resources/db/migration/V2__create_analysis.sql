@@ -36,8 +36,7 @@ CREATE TABLE address (
 
 -- 지리 좌표 정보 (Address의 하위, 1:1 관계)
 CREATE TABLE address_coordinate (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    address_id BIGINT NOT NULL UNIQUE,
+    address_id BIGINT PRIMARY KEY,
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
