@@ -36,7 +36,7 @@ class AddressMappingEntity(
     @Column(name = "created_at", nullable = false)
     var createdAt: ZonedDateTime = ZonedDateTime.now()
 ) {
-    fun setAnalysisResult(analysisResult: AnalysisResultEntity) {
+    fun setupAnalysisResult(analysisResult: AnalysisResultEntity) {
         this.analysisResult = analysisResult
         analysisResult.addressMappings.add(this)
     }

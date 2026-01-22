@@ -29,6 +29,9 @@ dependencies {
     // Spring Data JPA
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+
+    // Jackson for JSON serialization with Java 8+ date/time support
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 }
 
 flyway {

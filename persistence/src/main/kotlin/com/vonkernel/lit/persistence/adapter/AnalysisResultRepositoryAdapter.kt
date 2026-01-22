@@ -9,34 +9,41 @@ import com.vonkernel.lit.persistence.entity.analysis.UrgencyMappingEntity
 import com.vonkernel.lit.persistence.entity.core.IncidentTypeEntity
 import com.vonkernel.lit.persistence.entity.core.UrgencyTypeEntity
 import com.vonkernel.lit.persistence.jpa.JpaAddressRepository
+import com.vonkernel.lit.persistence.jpa.JpaAnalysisResultOutboxRepository
 import com.vonkernel.lit.persistence.jpa.JpaAnalysisResultRepository
 import com.vonkernel.lit.persistence.jpa.JpaIncidentTypeRepository
 import com.vonkernel.lit.persistence.jpa.JpaUrgencyTypeRepository
 import com.vonkernel.lit.persistence.mapper.AnalysisResultMapper
+import com.vonkernel.lit.persistence.mapper.AnalysisResultOutboxMapper
 import com.vonkernel.lit.persistence.mapper.KeywordMapper
 import com.vonkernel.lit.persistence.mapper.LocationMapper
 import com.vonkernel.lit.repository.AnalysisResultRepository
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 
 @Repository
 class AnalysisResultRepositoryAdapter(
     private val jpaAnalysisResultRepository: JpaAnalysisResultRepository,
+    private val jpaAnalysisResultOutboxRepository: JpaAnalysisResultOutboxRepository,
     private val jpaIncidentTypeRepository: JpaIncidentTypeRepository,
     private val jpaUrgencyTypeRepository: JpaUrgencyTypeRepository,
-    private val jpaAddressRepository: JpaAddressRepository
+    private val jpaAddressRepository: JpaAddressRepository,
+    private val outboxMapper: AnalysisResultOutboxMapper
 ) : AnalysisResultRepository {
 
+    @Transactional
     override fun save(analysisResult: AnalysisResult): AnalysisResult =
         buildAnalysisResultEntity(analysisResult)
             .let { jpaAnalysisResultRepository.save(it) }
+            .also { jpaAnalysisResultOutboxRepository.save(outboxMapper.toPersistenceModel(analysisResult)) }
             .let { AnalysisResultMapper.toDomainModel(it) }
 
     private fun buildAnalysisResultEntity(analysisResult: AnalysisResult): AnalysisResultEntity =
         AnalysisResultEntity().apply {
-            createUrgencyMapping(loadUrgency(analysisResult)).setAnalysisResult(this)
-            createIncidentTypeMappings(loadIncidentTypes(analysisResult)).forEach { it.setAnalysisResult(this) }
-            createAddressMappings(loadOrCreateAddresses(analysisResult)).forEach { it.setAnalysisResult(this) }
-            createKeywords(analysisResult).forEach { it.setAnalysisResult(this) }
+            createUrgencyMapping(loadUrgency(analysisResult)).setupAnalysisResult(this)
+            createIncidentTypeMappings(loadIncidentTypes(analysisResult)).forEach { it.setupAnalysisResult(this) }
+            createAddressMappings(loadOrCreateAddresses(analysisResult)).forEach { it.setupAnalysisResult(this) }
+            createKeywords(analysisResult).forEach { it.setupAnalysisResult(this) }
         }
 
     private fun loadIncidentTypes(analysisResult: AnalysisResult): List<IncidentTypeEntity> =
