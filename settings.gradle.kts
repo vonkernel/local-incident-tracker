@@ -6,5 +6,5 @@ include(
     "analyzer",
     "indexer",
     "searcher",
-    "maindb"
+    "persistence"
 )

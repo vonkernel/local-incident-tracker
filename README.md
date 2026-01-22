@@ -133,11 +133,9 @@ local-incident-tracker/
 │   ├── build.gradle.kts
 │   └── src/
 │
-├── maindb/                       # 데이터베이스 마이그레이션 (Flyway)
+├── persistence/                  # 영속성 계층 (JPA Entity + Flyway 마이그레이션)
 │   ├── build.gradle.kts
-│   └── src/main/resources/db/migration/
-│       ├── V1__create_article.sql
-│       └── V2__create_analysis.sql
+│   └── src/
 │
 └── infrastructure/               # 인프라 및 설정
     ├── docker-compose.yml        # 로컬 개발 스택
@@ -217,6 +215,9 @@ Kafka로 전달된 분석 결과를 수신하여 OpenSearch로 색인합니다.
 
 ### searcher (검색 서비스)
 사용자를 위한 REST API 인터페이스를 제공합니다. OpenSearch에서 사건사고를 검색, 필터링, 순위 결정하는 로직을 처리합니다.
+
+### persistence (영속성 계층)
+JPA Entity와 Flyway 데이터베이스 마이그레이션을 관리합니다. DB 스키마와 매핑되는 Entity들을 정의하고 버전 관리합니다.
 
 ## 제공 기능
 

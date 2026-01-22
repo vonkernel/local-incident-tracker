@@ -19,7 +19,12 @@ val dbPassword = System.getenv("DB_PASSWORD") ?: (project.findProperty("db.passw
 val migrationPath = "filesystem:${project.projectDir}/src/main/resources/db/migration"
 
 dependencies {
+    // PostgreSQL driver
     implementation("org.postgresql:postgresql:42.7.9")
+
+    // Spring Data JPA
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
 }
 
 flyway {

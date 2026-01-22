@@ -31,7 +31,7 @@ CREATE TABLE address (
     depth3_name VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(region_type, code, address_name)
+    UNIQUE(region_type, code)
 );
 
 -- 지리 좌표 정보 (Address의 하위, 1:1 관계)
@@ -143,4 +143,3 @@ COMMENT ON COLUMN article_keywords.priority IS '키워드 우선도 (높을수�
 -- ============================================
 
 CREATE INDEX idx_address_name ON address(address_name);
-CREATE INDEX idx_address_code_region_type ON address(code, region_type);
