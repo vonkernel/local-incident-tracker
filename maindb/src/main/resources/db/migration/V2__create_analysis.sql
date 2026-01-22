@@ -138,3 +138,10 @@ COMMENT ON TABLE address_mapping IS 'Article과 Address의 M:N 관계 (Address�
 COMMENT ON TABLE article_keywords IS 'Article의 추출된 키워드';
 COMMENT ON COLUMN article_keywords.keyword IS '추출된 키워드';
 COMMENT ON COLUMN article_keywords.priority IS '키워드 우선도 (높을수록 중요)';
+
+-- ============================================
+-- 인덱스
+-- ============================================
+
+CREATE INDEX idx_address_name ON address(address_name);
+CREATE INDEX idx_address_code_region_type ON address(code, region_type);
