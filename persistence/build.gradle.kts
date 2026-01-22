@@ -32,6 +32,11 @@ dependencies {
 
     // Jackson for JSON serialization with Java 8+ date/time support
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+
+    // H2 for integration tests
+    testImplementation("com.h2database:h2")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.boot:spring-boot-test-autoconfigure")
 }
 
 flyway {
