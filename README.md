@@ -101,6 +101,7 @@ flowchart TD
 | PostgreSQL | 18 | RDBMS (프로덕션은 Aurora) |
 | Kafka | 3.8 | 이벤트 큐 |
 | Debezium | 3.4 | CDC 플랫폼 |
+| Flyway | 11.20.2 | 데이터베이스 마이그레이션 |
 | OpenSearch | 3.3 | 검색 엔진 |
 
 ## 프로젝트 구조
@@ -132,6 +133,12 @@ local-incident-tracker/
 │   ├── build.gradle.kts
 │   └── src/
 │
+├── maindb/                       # 데이터베이스 마이그레이션 (Flyway)
+│   ├── build.gradle.kts
+│   └── src/main/resources/db/migration/
+│       ├── V1__create_article.sql
+│       └── V2__create_analysis.sql
+│
 └── infrastructure/               # 인프라 및 설정
     ├── docker-compose.yml        # 로컬 개발 스택
     └── debezium/                 # Debezium 설정
@@ -162,9 +169,10 @@ Article에 대해 분석을 수행한 결과를 표현하는 클래스입니다.
 - 기본 정보: articleId
 - 분석 결과: incidentTypes (여러 재난 유형 가능), urgency (긴급도)
 - 위치 정보: locations (List<Location>)
-  - Location: coordinate (Coordinate: lat, lon) + addresses (List<Address>)
-  - Address: regionType, code, addressName, depth1Name, depth2~4Name (optional)
-- 정제 데이터: keywords (List<String>)
+  - Location: coordinate (Coordinate: lat, lon) + address (Address)
+  - Address: regionType, code, addressName, depth1~3Name (optional)
+- 정제 데이터: keywords (List<Keyword>)
+  - Keyword: keyword (String), priority (Int, 높을수록 높은 중요도)
 
 ### ArticleIndexDocument (검색 인덱스 문서)
 
