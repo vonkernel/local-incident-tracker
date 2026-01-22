@@ -37,6 +37,11 @@ class IncidentTypeMappingEntity(
     @Column(name = "created_at", nullable = false)
     var createdAt: ZonedDateTime = ZonedDateTime.now()
 ) {
+    fun setAnalysisResult(analysisResult: AnalysisResultEntity) {
+        this.analysisResult = analysisResult
+        analysisResult.incidentTypeMappings.add(this)
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is IncidentTypeMappingEntity) return false

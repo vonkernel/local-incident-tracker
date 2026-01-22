@@ -32,6 +32,11 @@ class ArticleKeywordEntity(
     @Column(name = "created_at", nullable = false)
     var createdAt: ZonedDateTime = ZonedDateTime.now()
 ) {
+    fun setAnalysisResult(analysisResult: AnalysisResultEntity) {
+        this.analysisResult = analysisResult
+        analysisResult.keywords.add(this)
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is ArticleKeywordEntity) return false

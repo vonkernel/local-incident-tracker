@@ -32,6 +32,11 @@ class UrgencyMappingEntity(
     @Column(name = "created_at", nullable = false)
     var createdAt: ZonedDateTime = ZonedDateTime.now()
 ) {
+    fun setAnalysisResult(analysisResult: AnalysisResultEntity) {
+        this.analysisResult = analysisResult
+        analysisResult.urgencyMapping = this
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is UrgencyMappingEntity) return false
