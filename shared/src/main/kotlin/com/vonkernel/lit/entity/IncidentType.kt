@@ -1,41 +1,10 @@
 package com.vonkernel.lit.entity
 
-enum class IncidentType(val displayName: String) {
-    LIVESTOCK_INFECTIOUS_DISEASE("가축전염병"),
-    DROUGHT("가뭄"),
-    LIVESTOCK_DISEASE("가축질병"),
-    STRONG_WIND("강풍"),
-    DRYNESS("건조"),
-    TRAFFIC("교통"),
-    TRAFFIC_ACCIDENT("교통사고"),
-    TRAFFIC_CONTROL("교통통제"),
-    FINANCIAL("금융"),
-    OTHER("기타"),
-    HEAVY_SNOW("대설"),
-    FINE_DUST("미세먼지"),
-    CIVIL_DEFENSE("민방공"),
-    COLLAPSE("붕괴"),
-    FOREST_FIRE("산불"),
-    LANDSLIDE("산사태"),
-    WATER_SUPPLY("수도"),
-    FOG("안개"),
-    ENERGY("에너지"),
-    INFECTIOUS_DISEASE("전염병"),
-    BLACKOUT("정전"),
-    EARTHQUAKE("지진"),
-    TSUNAMI("지진해일"),
-    TYPHOON("태풍"),
-    TERRORISM("테러"),
-    COMMUNICATION("통신"),
-    EXPLOSION("폭발"),
-    HEAT_WAVE("폭염"),
-    WIND_WAVE("풍랑"),
-    COLD_WAVE("한파"),
-    HEAVY_RAIN("호우"),
-    FLOOD("홍수"),
-    FIRE("화재"),
-    ENVIRONMENTAL_ACCIDENT("환경오염사고"),
-    YELLOW_DUST("황사"),
-    MARINE_ACCIDENT("해양선박사고"),
-    DEATH("사망");
-}
+/**
+ * 사건 유형을 나타내는 데이터 클래스
+ * 실제 사건 유형 목록은 데이터베이스에서 동적으로 관리된다.
+ */
+data class IncidentType(
+    val code: String,    // 사건 유형 코드 (예: "forest_fire", "typhoon")
+    val name: String     // 사건 유형 이름 (예: "산불", "태풍")
+)
