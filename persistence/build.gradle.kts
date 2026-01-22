@@ -10,6 +10,7 @@ buildscript {
 
 plugins {
     id("java")
+    kotlin("plugin.jpa") version "2.2.21"
     id("org.flywaydb.flyway") version "11.20.2"
 }
 
@@ -19,6 +20,9 @@ val dbPassword = System.getenv("DB_PASSWORD") ?: (project.findProperty("db.passw
 val migrationPath = "filesystem:${project.projectDir}/src/main/resources/db/migration"
 
 dependencies {
+    // Shared module (domain models)
+    implementation(project(":shared"))
+
     // PostgreSQL driver
     implementation("org.postgresql:postgresql:42.7.9")
 
