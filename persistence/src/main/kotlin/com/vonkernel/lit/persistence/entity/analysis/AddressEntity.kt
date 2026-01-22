@@ -1,4 +1,4 @@
-package com.vonkernel.lit.persistence.entity
+package com.vonkernel.lit.persistence.entity.analysis
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity

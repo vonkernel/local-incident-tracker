@@ -57,49 +57,49 @@ CREATE TABLE analysis_result (
 );
 
 -- ============================================
--- Article과의 매핑 테이블들
+-- AnalysisResult와의 매핑 테이블들
 -- ============================================
 
--- Article과 Urgency의 N:1 관계
+-- AnalysisResult과 Urgency의 N:1 관계
 CREATE TABLE urgency_mapping (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    article_id VARCHAR(255) NOT NULL UNIQUE,
+    analysis_result_id BIGINT NOT NULL UNIQUE,
     urgency_type_id BIGINT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (article_id) REFERENCES article(article_id) ON DELETE CASCADE,
+    FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE,
     FOREIGN KEY (urgency_type_id) REFERENCES urgency_type(id) ON DELETE RESTRICT
 );
 
--- Article과 IncidentType의 M:N 관계
+-- AnalysisResult과 IncidentType의 M:N 관계
 CREATE TABLE incident_type_mapping (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    article_id VARCHAR(255) NOT NULL,
+    analysis_result_id BIGINT NOT NULL,
     incident_type_id BIGINT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (article_id) REFERENCES article(article_id) ON DELETE CASCADE,
+    FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE,
     FOREIGN KEY (incident_type_id) REFERENCES incident_type(id) ON DELETE RESTRICT,
-    UNIQUE(article_id, incident_type_id)
+    UNIQUE(analysis_result_id, incident_type_id)
 );
 
--- Article과 Address의 M:N 관계 (Address하위의 GeoPoint는 자동으로 포함)
+-- AnalysisResult과 Address의 M:N 관계 (Address하위의 GeoPoint는 자동으로 포함)
 CREATE TABLE address_mapping (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    article_id VARCHAR(255) NOT NULL,
+    analysis_result_id BIGINT NOT NULL,
     address_id BIGINT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (article_id) REFERENCES article(article_id) ON DELETE CASCADE,
+    FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE,
     FOREIGN KEY (address_id) REFERENCES address(id) ON DELETE RESTRICT,
-    UNIQUE(article_id, address_id)
+    UNIQUE(analysis_result_id, address_id)
 );
 
--- Article의 키워드
+-- AnalysisResult의 키워드
 CREATE TABLE article_keywords (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    article_id VARCHAR(255) NOT NULL,
+    analysis_result_id BIGINT NOT NULL,
     keyword VARCHAR(500) NOT NULL,
     priority INT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (article_id) REFERENCES article(article_id) ON DELETE CASCADE
+    FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE
 );
 
 -- ============================================
@@ -131,10 +131,10 @@ COMMENT ON TABLE analysis_result IS '분석 결과 마킹 테이블 (실제 Outb
 COMMENT ON COLUMN analysis_result.article_id IS '기사 ID (외래키)';
 COMMENT ON COLUMN analysis_result.created_at IS '분석 결과 생성 시간';
 
-COMMENT ON TABLE urgency_mapping IS 'Article과 UrgencyType의 N:1 관계 (한 기사는 하나의 긴급도만 가짐)';
-COMMENT ON TABLE incident_type_mapping IS 'Article과 IncidentType의 M:N 관계 (한 기사는 여러 사건 유형을 가질 수 있음)';
-COMMENT ON TABLE address_mapping IS 'Article과 Address의 M:N 관계 (Address하위의 AddressGeoPoint는 자동으로 포함)';
-COMMENT ON TABLE article_keywords IS 'Article의 추출된 키워드';
+COMMENT ON TABLE urgency_mapping IS 'AnalysisResult과 UrgencyType의 N:1 관계 (하나의 분석 결과는 하나의 긴급도를 가짐)';
+COMMENT ON TABLE incident_type_mapping IS 'AnalysisResult과 IncidentType의 M:N 관계 (하나의 분석 결과는 여러 사건 유형을 가질 수 있음)';
+COMMENT ON TABLE address_mapping IS 'AnalysisResult과 Address의 M:N 관계 (Address하위의 AddressCoordinate는 자동으로 포함)';
+COMMENT ON TABLE article_keywords IS 'AnalysisResult의 추출된 키워드';
 COMMENT ON COLUMN article_keywords.keyword IS '추출된 키워드';
 COMMENT ON COLUMN article_keywords.priority IS '키워드 우선도 (높을수록 중요)';
 
