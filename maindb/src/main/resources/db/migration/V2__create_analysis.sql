@@ -121,7 +121,6 @@ COMMENT ON COLUMN address.address_name IS '전체 주소명 (항상 존재)';
 COMMENT ON COLUMN address.depth1_name IS '시/도 (깊이 1, nullable)';
 COMMENT ON COLUMN address.depth2_name IS '시/군/구 (깊이 2)';
 COMMENT ON COLUMN address.depth3_name IS '읍/면/동 (깊이 3)';
-COMMENT ON COLUMN address.depth4_name IS '리 (깊이 4)';
 
 COMMENT ON TABLE address_coordinate IS '지리 좌표 정보 (Address의 하위, 1:1 관계로 각 Address마다 하나의 AddressGeoPoint)';
 COMMENT ON COLUMN address_coordinate.address_id IS 'Address FK (1:1 관계)';
