@@ -92,16 +92,16 @@ flowchart TD
 
 ## 기술 스택
 
-| 구성 요소 | 버전    | 역할 |
-|---------|-------|------|
-| JDK | 21    | 런타임 |
-| Kotlin | 2.2   | 프로그래밍 언어 |
-| Spring Boot | 4.0   | 프레임워크 |
+| 구성 요소 | 버전 | 역할 |
+|---------|------|------|
+| JDK | 21 | 런타임 |
+| Kotlin | 2.21 | 프로그래밍 언어 |
+| Spring Boot | 4.0 | 프레임워크 |
 | Gradle | 9.2.1 | 빌드 도구 |
-| PostgreSQL | 18    | RDBMS (프로덕션은 Aurora) |
-| Kafka | 3.8   | 이벤트 큐 |
-| Debezium | 3.4   | CDC 플랫폼 |
-| OpenSearch | 3.3   | 검색 엔진 |
+| PostgreSQL | 18 | RDBMS (프로덕션은 Aurora) |
+| Kafka | 3.8 | 이벤트 큐 |
+| Debezium | 3.4 | CDC 플랫폼 |
+| OpenSearch | 3.3 | 검색 엔진 |
 
 ## 프로젝트 구조
 
