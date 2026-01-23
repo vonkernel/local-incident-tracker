@@ -36,7 +36,7 @@ dependencies {
     // H2 for integration tests
     testImplementation("com.h2database:h2")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.springframework.boot:spring-boot-test-autoconfigure")
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
 }
 
 flyway {
