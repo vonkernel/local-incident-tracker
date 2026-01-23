@@ -1,0 +1,6 @@
+package com.vonkernel.lit.persistence
+
+import org.springframework.boot.autoconfigure.SpringBootApplication
+
+@SpringBootApplication
+class PersistenceTestApplication

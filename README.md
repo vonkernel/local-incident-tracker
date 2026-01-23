@@ -92,16 +92,17 @@ flowchart TD
 
 ## 기술 스택
 
-| 구성 요소 | 버전    | 역할 |
-|---------|-------|------|
-| JDK | 21    | 런타임 |
-| Kotlin | 2.2   | 프로그래밍 언어 |
-| Spring Boot | 4.0   | 프레임워크 |
+| 구성 요소 | 버전 | 역할 |
+|---------|------|------|
+| JDK | 21 | 런타임 |
+| Kotlin | 2.21 | 프로그래밍 언어 |
+| Spring Boot | 4.0 | 프레임워크 |
 | Gradle | 9.2.1 | 빌드 도구 |
-| PostgreSQL | 18    | RDBMS (프로덕션은 Aurora) |
-| Kafka | 3.8   | 이벤트 큐 |
-| Debezium | 3.4   | CDC 플랫폼 |
-| OpenSearch | 3.3   | 검색 엔진 |
+| PostgreSQL | 18 | RDBMS (프로덕션은 Aurora) |
+| Kafka | 3.8 | 이벤트 큐 |
+| Debezium | 3.4 | CDC 플랫폼 |
+| Flyway | 11.20.2 | 데이터베이스 마이그레이션 |
+| OpenSearch | 3.3 | 검색 엔진 |
 
 ## 프로젝트 구조
 
@@ -129,6 +130,10 @@ local-incident-tracker/
 │   └── src/
 │
 ├── searcher/                     # 검색 서비스
+│   ├── build.gradle.kts
+│   └── src/
+│
+├── persistence/                  # 영속성 계층 (JPA Entity + Flyway 마이그레이션)
 │   ├── build.gradle.kts
 │   └── src/
 │
@@ -162,9 +167,10 @@ Article에 대해 분석을 수행한 결과를 표현하는 클래스입니다.
 - 기본 정보: articleId
 - 분석 결과: incidentTypes (여러 재난 유형 가능), urgency (긴급도)
 - 위치 정보: locations (List<Location>)
-  - Location: coordinate (Coordinate: lat, lon) + addresses (List<Address>)
-  - Address: regionType, code, addressName, depth1Name, depth2~4Name (optional)
-- 정제 데이터: keywords (List<String>)
+  - Location: coordinate (Coordinate: lat, lon) + address (Address)
+  - Address: regionType, code, addressName, depth1~3Name (optional)
+- 정제 데이터: keywords (List<Keyword>)
+  - Keyword: keyword (String), priority (Int, 높을수록 높은 중요도)
 
 ### ArticleIndexDocument (검색 인덱스 문서)
 
@@ -209,6 +215,9 @@ Kafka로 전달된 분석 결과를 수신하여 OpenSearch로 색인합니다.
 
 ### searcher (검색 서비스)
 사용자를 위한 REST API 인터페이스를 제공합니다. OpenSearch에서 사건사고를 검색, 필터링, 순위 결정하는 로직을 처리합니다.
+
+### persistence (영속성 계층)
+JPA Entity와 Flyway 데이터베이스 마이그레이션을 관리합니다. DB 스키마와 매핑되는 Entity들을 정의하고 버전 관리합니다.
 
 ## 제공 기능
 

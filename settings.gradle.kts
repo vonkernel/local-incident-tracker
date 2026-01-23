@@ -5,5 +5,6 @@ include(
     "collector",
     "analyzer",
     "indexer",
-    "searcher"
+    "searcher",
+    "persistence"
 )
