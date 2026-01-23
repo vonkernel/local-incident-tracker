@@ -25,8 +25,8 @@ class LocationMapperTest {
 
         val domain = LocationMapper.toDomainModel(entity)
 
-        assertThat(domain.coordinate.lat).isEqualTo(37.4979)
-        assertThat(domain.coordinate.lon).isEqualTo(126.9270)
+        assertThat(domain.coordinate!!.lat).isEqualTo(37.4979)
+        assertThat(domain.coordinate!!.lon).isEqualTo(126.9270)
     }
 
     @Test
@@ -233,8 +233,8 @@ class LocationMapperTest {
         val entity = LocationMapper.toPersistenceModel(originalDomain)
         val reconvertedDomain = LocationMapper.toDomainModel(entity)
 
-        assertThat(reconvertedDomain.coordinate.lat).isEqualTo(originalDomain.coordinate.lat)
-        assertThat(reconvertedDomain.coordinate.lon).isEqualTo(originalDomain.coordinate.lon)
+        assertThat(reconvertedDomain.coordinate!!.lat).isEqualTo(originalDomain.coordinate!!.lat)
+        assertThat(reconvertedDomain.coordinate!!.lon).isEqualTo(originalDomain.coordinate!!.lon)
         assertThat(reconvertedDomain.address.regionType).isEqualTo(originalDomain.address.regionType)
         assertThat(reconvertedDomain.address.code).isEqualTo(originalDomain.address.code)
         assertThat(reconvertedDomain.address.addressName).isEqualTo(originalDomain.address.addressName)

@@ -17,7 +17,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity(name = "HIGH", level = 3)
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -36,7 +36,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -55,7 +55,7 @@ class AnalysisResultMapperTest {
         val incidentTypeEntity = TestFixtures.createIncidentTypeEntity(code = "fire", name = "산불")
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -81,7 +81,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -131,7 +131,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -163,7 +163,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity(name = "HIGH", level = 3)
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -183,7 +183,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -201,7 +201,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -227,7 +227,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -254,7 +254,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -280,7 +280,7 @@ class AnalysisResultMapperTest {
         }
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -295,8 +295,8 @@ class AnalysisResultMapperTest {
         val domain = AnalysisResultMapper.toDomainModel(entity)
 
         assertThat(domain.locations).hasSize(1)
-        assertThat(domain.locations.first().coordinate.lat).isEqualTo(37.4979)
-        assertThat(domain.locations.first().coordinate.lon).isEqualTo(126.9270)
+        assertThat(domain.locations.first().coordinate!!.lat).isEqualTo(37.4979)
+        assertThat(domain.locations.first().coordinate!!.lon).isEqualTo(126.9270)
     }
 
     @Test
@@ -306,7 +306,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity()
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -349,7 +349,7 @@ class AnalysisResultMapperTest {
         }
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -380,7 +380,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity(name = "LOW", level = 1)
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
@@ -402,7 +402,7 @@ class AnalysisResultMapperTest {
         val urgencyEntity = TestFixtures.createUrgencyEntity(name = "MEDIUM", level = 2)
 
         val entity = AnalysisResultEntity(
-            article = articleEntity,
+            articleId = articleEntity.articleId,
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
