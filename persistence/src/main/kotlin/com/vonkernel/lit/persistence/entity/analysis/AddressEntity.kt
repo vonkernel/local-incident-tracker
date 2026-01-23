@@ -1,5 +1,6 @@
 package com.vonkernel.lit.persistence.entity.analysis
 
+import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
@@ -48,7 +49,7 @@ class AddressEntity(
     @Column(name = "updated_at", nullable = false)
     var updatedAt: ZonedDateTime = ZonedDateTime.now(),
 
-    @OneToOne(mappedBy = "address", fetch = FetchType.LAZY, optional = true)
+    @OneToOne(mappedBy = "address", fetch = FetchType.LAZY, optional = true, cascade = [CascadeType.ALL])
     var coordinate: AddressCoordinateEntity? = null
 ) {
     override fun equals(other: Any?): Boolean {
