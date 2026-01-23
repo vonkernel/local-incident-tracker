@@ -9,7 +9,7 @@ object LocationMapper {
 
     fun toDomainModel(entity: AddressEntity): Location =
         Location(
-            coordinate = CoordinateMapper.toDomainModel(entity.coordinate!!),
+            coordinate = if (entity.coordinate != null) CoordinateMapper.toDomainModel(entity.coordinate!!) else null,
             address = entity.run {
                 Address(
                     regionType = RegionType.entries.find { it.code == regionType } ?: RegionType.UNKNOWN,
@@ -23,7 +23,7 @@ object LocationMapper {
         )
 
     fun toPersistenceModel(domain: Location): AddressEntity =
-        CoordinateMapper.toPersistenceModel(domain.coordinate)
+        domain.coordinate?.let { CoordinateMapper.toPersistenceModel(it) }
             .let { coordinateEntity ->
                 AddressEntity(
                     regionType = domain.address.regionType.code,
@@ -34,7 +34,7 @@ object LocationMapper {
                     depth3Name = domain.address.depth3Name
                 ).apply {
                     this.coordinate = coordinateEntity
-                    coordinateEntity.address = this
+                    coordinateEntity?.address = this
                 }
             }
 }
