@@ -39,7 +39,7 @@ class AnalysisResultRepositoryAdapter(
             .let { AnalysisResultMapper.toDomainModel(it) }
 
     private fun buildAnalysisResultEntity(analysisResult: AnalysisResult): AnalysisResultEntity =
-        AnalysisResultEntity().apply {
+        AnalysisResultEntity(articleId = analysisResult.articleId).apply {
             createUrgencyMapping(loadUrgency(analysisResult)).setupAnalysisResult(this)
             createIncidentTypeMappings(loadIncidentTypes(analysisResult)).forEach { it.setupAnalysisResult(this) }
             createAddressMappings(loadOrCreateAddresses(analysisResult)).forEach { it.setupAnalysisResult(this) }
@@ -47,7 +47,7 @@ class AnalysisResultRepositoryAdapter(
         }
 
     private fun loadIncidentTypes(analysisResult: AnalysisResult): List<IncidentTypeEntity> =
-        jpaIncidentTypeRepository.findByCodes(analysisResult.incidentTypes.map { it.code })
+        jpaIncidentTypeRepository.findByCodeIn(analysisResult.incidentTypes.map { it.code })
 
     private fun loadUrgency(analysisResult: AnalysisResult): UrgencyTypeEntity =
         jpaUrgencyTypeRepository.findByName(analysisResult.urgency.name)

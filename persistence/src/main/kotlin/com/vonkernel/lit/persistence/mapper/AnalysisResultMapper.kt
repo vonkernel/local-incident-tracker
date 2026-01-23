@@ -7,7 +7,7 @@ object AnalysisResultMapper {
 
     fun toDomainModel(entity: AnalysisResultEntity): AnalysisResult =
         AnalysisResult(
-            articleId = entity.article!!.articleId,
+            articleId = entity.articleId,
             incidentTypes = entity.incidentTypeMappings
                 .mapNotNull { it.incidentType }
                 .map { IncidentTypeMapper.toDomainModel(it) }
