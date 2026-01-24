@@ -23,57 +23,86 @@ class ArticleCollectionServiceImpl(
     private val logger = LoggerFactory.getLogger(ArticleCollectionServiceImpl::class.java)
 
     override suspend fun collectArticlesForDate(date: LocalDate) {
-        val inqDt = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+        collectAllPages(date.toInqDtFormat())
+    }
 
-        val firstPage = fetchPageWithRetry(inqDt, pageNo = 1, numOfRows = 1000)
-        val totalPages = calculateTotalPages(firstPage.totalCount, pageSize = 1000)
+    // ========== Pure Functions ==========
 
-        val firstPageResult = runCatching {
-            processAndSave(firstPage.articles)
-        }
+    private fun LocalDate.toInqDtFormat(): String =
+        format(DateTimeFormatter.ofPattern("yyyyMMdd"))
 
-        val remainingResults = (2..totalPages)
-            .map { pageNo -> fetchAndProcess(inqDt, pageNo) }
-            .partition { it.isSuccess }
+    private fun calculateTotalPages(totalCount: Int): Int =
+        (totalCount + PAGE_SIZE - 1) / PAGE_SIZE
 
-        val allResults = listOf(firstPageResult) + remainingResults.first + remainingResults.second
-        val failedPages = allResults
-            .withIndex()
+    private fun calculateBackoffDelay(attempt: Int): Long =
+        2.0.pow(attempt).toLong() * 1000
+
+    private fun extractFailedPageNumbers(results: List<IndexedValue<Result<Unit>>>): List<Int> =
+        results
             .filter { it.value.isFailure }
             .map { it.index + 1 }
 
+    private fun filterNewArticles(articles: List<Article>, existingIds: Set<String>): List<Article> =
+        articles.filter { it.articleId !in existingIds }
+
+    private fun validateArticles(items: List<Article>): List<Article> =
+        items.mapNotNull { it.validate().getOrNull() }
+
+    // ========== Effect Functions (with side effects) ==========
+
+    private suspend fun collectAllPages(inqDt: String) {
+        val firstPage = fetchPageWithRetry(inqDt, pageNo = 1)
+        val totalPages = calculateTotalPages(firstPage.totalCount)
+        val firstPageResult = runCatching { processAndSave(firstPage.articles) }
+        val remainingResults = collectRemainingPages(inqDt, 2..totalPages)
+
+        handleFailedPages(inqDt, firstPageResult, remainingResults)
+    }
+
+    private suspend fun collectRemainingPages(inqDt: String, pageRange: IntRange): List<Result<Unit>> =
+        pageRange.map { pageNo -> fetchAndProcess(inqDt, pageNo) }
+
+    private suspend fun handleFailedPages(
+        inqDt: String,
+        firstPageResult: Result<Unit>,
+        remainingResults: List<Result<Unit>>
+    ) {
+        val allResults = listOf(firstPageResult) + remainingResults
+        val failedPages = extractFailedPageNumbers(allResults.withIndex().toList())
+
         if (failedPages.isNotEmpty()) {
-            logger.warn("Retrying ${failedPages.size} failed pages for $inqDt")
-            val retryResults = retryPages(inqDt, failedPages)
-
-            val stillFailed = retryResults
-                .withIndex()
-                .filter { it.value.isFailure }
-                .map { failedPages[it.index] }
-
-            if (stillFailed.isNotEmpty()) {
-                throw CollectionException(
-                    "Failed to collect pages $stillFailed for $inqDt after retry"
-                )
-            }
+            logAndRetryFailedPages(inqDt, failedPages)
         }
     }
 
-    private fun calculateTotalPages(totalCount: Int, pageSize: Int): Int =
-        (totalCount + pageSize - 1) / pageSize
+    private suspend fun logAndRetryFailedPages(inqDt: String, failedPages: List<Int>) {
+        logger.warn("Retrying ${failedPages.size} failed pages for $inqDt")
 
-    private suspend fun fetchAndProcess(inqDt: String, pageNo: Int): Result<Unit> = runCatching {
-        val page = fetchPageWithRetry(inqDt, pageNo, numOfRows = 1000)
-        processAndSave(page.articles)
-    }.onFailure { e ->
-        logger.error("Failed to fetch page $pageNo for $inqDt", e)
+        retryPages(inqDt, failedPages)
+            .withIndex()
+            .filter { it.value.isFailure }
+            .map { failedPages[it.index] }
+            .takeIf { it.isNotEmpty() }
+            ?.let { stillFailed ->
+                throw CollectionException("Failed to collect pages $stillFailed for $inqDt after retry")
+            }
     }
+
+    private suspend fun fetchAndProcess(inqDt: String, pageNo: Int): Result<Unit> =
+        runCatching {
+            fetchPageWithRetry(inqDt, pageNo)
+                .articles
+                .also { processAndSave(it) }
+                .let { }
+        }.onFailure { logger.error("Failed to fetch page $pageNo for $inqDt", it) }
 
     private suspend fun retryPages(inqDt: String, pageNumbers: List<Int>): List<Result<Unit>> =
         pageNumbers.map { pageNo ->
             runCatching {
-                val page = fetchPageWithRetry(inqDt, pageNo, numOfRows = 1000)
-                processAndSave(page.articles)
+                fetchPageWithRetry(inqDt, pageNo)
+                    .articles
+                    .also { processAndSave(it) }
+                    .let { }
             }.onSuccess {
                 logger.info("Successfully retried page $pageNo")
             }.onFailure { e ->
@@ -84,46 +113,39 @@ class ArticleCollectionServiceImpl(
     private suspend fun fetchPageWithRetry(
         inqDt: String,
         pageNo: Int,
-        numOfRows: Int,
-        maxRetries: Int = 3
+        maxRetries: Int = 3,
+        currentAttempt: Int = 0,
+        lastError: Throwable? = null
     ): ArticlePage {
-        var lastError: Throwable? = null
-
-        repeat(maxRetries) { attempt ->
-            runCatching {
-                newsApiPort.fetchArticles(inqDt, pageNo, numOfRows)
-            }.onSuccess { response ->
-                return response
-            }.onFailure { error ->
-                lastError = error
-                if (attempt < maxRetries - 1) {
-                    val backoffDelay = calculateBackoffDelay(attempt)
-                    logger.warn("Retry attempt ${attempt + 1} after ${backoffDelay}ms")
-                    delay(backoffDelay)
-                }
-            }
+        if (currentAttempt >= maxRetries) {
+            throw CollectionException("Failed after $maxRetries retries", lastError)
         }
 
-        throw CollectionException("Failed after $maxRetries retries", lastError)
+        return runCatching {
+            newsApiPort.fetchArticles(inqDt, pageNo, PAGE_SIZE)
+        }.getOrElse { error ->
+            val backoffDelay = calculateBackoffDelay(currentAttempt)
+            logger.warn("Retry attempt ${currentAttempt + 1} after ${backoffDelay}ms")
+            delay(backoffDelay)
+            fetchPageWithRetry(inqDt, pageNo, maxRetries, currentAttempt + 1, error)
+        }
     }
 
-    private fun calculateBackoffDelay(attempt: Int): Long =
-        2.0.pow(attempt).toLong() * 1000
-
-    private suspend fun processAndSave(items: List<Article>) = withContext(Dispatchers.IO) {
-        val newArticles = items
-            .asSequence()
-            .mapNotNull { it.validate().getOrNull() }
-            .toList()
-            .let { articles ->
-                val articleIds = articles.map { it.articleId }
-                val nonExistingIds = articleRepository.filterNonExisting(articleIds).toSet()
-                articles.filter { it.articleId in nonExistingIds }
+    private suspend fun processAndSave(items: List<Article>): Unit = withContext(Dispatchers.IO) {
+        items
+            .let(::validateArticles)
+            .let { validArticles ->
+                validArticles
+                    .map { it.articleId }
+                    .let { articleRepository.filterNonExisting(it).toSet() }
+                    .let { nonExistingIds -> filterNewArticles(validArticles, nonExistingIds) }
             }
+            .takeIf { it.isNotEmpty() }
+            ?.let { articleRepository.saveAll(it) }
+            ?: Unit
+    }
 
-        if (newArticles.isNotEmpty()) {
-            articleRepository.saveAll(newArticles)
-        }
+    companion object {
+        private const val PAGE_SIZE = 1000
     }
 }
-
