@@ -80,11 +80,11 @@ class YamlPromptLoader(
      * @param promptId 캐시를 무효화할 프롬프트 ID
      * @return 제거된 캐시 항목 수
      */
-    fun evictPrompt(promptId: String): Int {
-        val keysToRemove = promptCache.keys.filter { it.startsWith("$promptId-") }
-        keysToRemove.forEach { promptCache.remove(it) }
-        return keysToRemove.size
-    }
+    fun evictPrompt(promptId: String): Int =
+        promptCache.keys
+            .filter { it.startsWith("$promptId-") }
+            .onEach { promptCache.remove(it) }
+            .size
 
     /**
      * 현재 캐시된 프롬프트 수 조회
@@ -114,92 +114,51 @@ class YamlPromptLoader(
         promptId: String,
         inputType: Class<I>,
         outputType: Class<O>
-    ): Prompt<I, O> {
-        val yamlPath = "classpath:prompts/$promptId.yml"
-
-        // 1. 리소스 존재 확인
-        val resource = resourceLoader.getResource(yamlPath)
-        if (!resource.exists()) {
-            throw PromptLoadException(
-                promptId = promptId,
-                message = "Prompt file not found at $yamlPath"
-            )
-        }
-
-        // 2. YAML 파싱
-        val promptData = try {
-            resource.inputStream.use { inputStream ->
-                yamlMapper.readValue<YamlPromptData>(inputStream)
+    ): Prompt<I, O> =
+        "classpath:prompts/$promptId.yml"
+            .let { yamlPath ->
+                resourceLoader.getResource(yamlPath)
+                    .takeIf { it.exists() }
+                    ?: throw PromptLoadException(promptId, "Prompt file not found at $yamlPath")
             }
-        } catch (e: Exception) {
-            throw PromptParseException(
-                promptId = promptId,
-                parseError = e.message ?: "Unknown parsing error",
-                cause = e
-            )
-        }
-
-        // 3. 검증
-        validatePromptData(promptData)
-
-        // 4. Domain 모델로 변환
-        return convertToDomainModel(promptData, inputType, outputType)
-    }
+            .let { resource ->
+                runCatching {
+                    resource.inputStream.use { yamlMapper.readValue<YamlPromptData>(it) }
+                }.getOrElse { e ->
+                    throw PromptParseException(promptId, e.message ?: "Unknown parsing error", e)
+                }
+            }
+            .also { validatePromptData(it) }
+            .let { convertToDomainModel(it, inputType, outputType) }
 
     /**
      * YAML 데이터 검증
      */
     private fun validatePromptData(data: YamlPromptData) {
-        val errors = mutableListOf<String>()
+        buildList {
+            if (data.id.isBlank()) add("Prompt ID cannot be blank")
 
-        // ID 검증
-        if (data.id.isBlank()) {
-            errors.add("Prompt ID cannot be blank")
-        }
+            runCatching { LlmModel.valueOf(data.model) }
+                .onFailure { add("Invalid model: ${data.model}. Available models: ${LlmModel.entries.joinToString { it.name }}") }
 
-        // 모델 검증
-        try {
-            LlmModel.valueOf(data.model)
-        } catch (e: IllegalArgumentException) {
-            errors.add("Invalid model: ${data.model}. Available models: ${LlmModel.entries.joinToString { it.name }}")
-        }
+            if (data.template.isBlank()) add("Template cannot be blank")
 
-        // 템플릿 검증
-        if (data.template.isBlank()) {
-            errors.add("Template cannot be blank")
-        }
-
-        // 파라미터 검증
-        data.parameters?.let { params ->
-            if (params.temperature < 0f || params.temperature > 2f) {
-                errors.add("Temperature must be between 0.0 and 2.0, got ${params.temperature}")
-            }
-
-            params.topP?.let { topP ->
-                if (topP < 0f || topP > 1f) {
-                    errors.add("TopP must be between 0.0 and 1.0, got $topP")
+            data.parameters?.let { params ->
+                if (params.temperature !in 0f..2f) {
+                    add("Temperature must be between 0.0 and 2.0, got ${params.temperature}")
                 }
-            }
 
-            params.frequencyPenalty?.let { penalty ->
-                if (penalty < -2f || penalty > 2f) {
-                    errors.add("FrequencyPenalty must be between -2.0 and 2.0, got $penalty")
-                }
-            }
+                params.topP?.takeIf { it !in 0f..1f }
+                    ?.let { add("TopP must be between 0.0 and 1.0, got $it") }
 
-            params.presencePenalty?.let { penalty ->
-                if (penalty < -2f || penalty > 2f) {
-                    errors.add("PresencePenalty must be between -2.0 and 2.0, got $penalty")
-                }
-            }
-        }
+                params.frequencyPenalty?.takeIf { it !in -2f..2f }
+                    ?.let { add("FrequencyPenalty must be between -2.0 and 2.0, got $it") }
 
-        if (errors.isNotEmpty()) {
-            throw PromptValidationException(
-                promptId = data.id,
-                validationErrors = errors
-            )
-        }
+                params.presencePenalty?.takeIf { it !in -2f..2f }
+                    ?.let { add("PresencePenalty must be between -2.0 and 2.0, got $it") }
+            }
+        }.takeIf { it.isNotEmpty() }
+            ?.let { errors -> throw PromptValidationException(data.id, errors) }
     }
 
     /**
@@ -209,30 +168,25 @@ class YamlPromptLoader(
         data: YamlPromptData,
         inputType: Class<I>,
         outputType: Class<O>
-    ): Prompt<I, O> {
-        val model = LlmModel.valueOf(data.model)
-
-        val parameters = data.parameters?.let { params ->
-            PromptParameters(
-                temperature = params.temperature,
-                maxTokens = params.maxTokens,
-                maxCompletionTokens = params.maxCompletionTokens,
-                topP = params.topP,
-                frequencyPenalty = params.frequencyPenalty,
-                presencePenalty = params.presencePenalty,
-                stopSequences = params.stopSequences,
-                topK = params.topK,
-                providerSpecificOptions = params.providerSpecificOptions
-            )
-        } ?: PromptParameters()
-
-        return Prompt(
+    ): Prompt<I, O> =
+        Prompt(
             id = data.id,
-            model = model,
+            model = LlmModel.valueOf(data.model),
             template = data.template,
-            parameters = parameters,
+            parameters = data.parameters?.let { params ->
+                PromptParameters(
+                    temperature = params.temperature,
+                    maxTokens = params.maxTokens,
+                    maxCompletionTokens = params.maxCompletionTokens,
+                    topP = params.topP,
+                    frequencyPenalty = params.frequencyPenalty,
+                    presencePenalty = params.presencePenalty,
+                    stopSequences = params.stopSequences,
+                    topK = params.topK,
+                    providerSpecificOptions = params.providerSpecificOptions
+                )
+            } ?: PromptParameters(),
             inputType = inputType,
             outputType = outputType
         )
-    }
 }

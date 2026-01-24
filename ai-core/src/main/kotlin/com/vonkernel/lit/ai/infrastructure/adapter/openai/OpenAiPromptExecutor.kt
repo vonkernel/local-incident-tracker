@@ -32,53 +32,40 @@ class OpenAiPromptExecutor(
     private val objectMapper: ObjectMapper
 ) : PromptExecutor {
 
-    override fun supports(provider: LlmProvider): Boolean {
-        return provider == LlmProvider.OPENAI
-    }
+    override fun supports(provider: LlmProvider): Boolean =
+        provider == LlmProvider.OPENAI
 
     override suspend fun <I, O> execute(
         prompt: Prompt<I, O>,
         input: I
     ): PromptExecutionResult<O> = withContext(Dispatchers.IO) {
-        // ChatOptions 구성
-        val chatOptions = buildChatOptions(prompt.parameters)
-
-        try {
-            // LLM 호출 (30초 타임아웃)
-            val response = withTimeout(30000L) {
+        runCatching {
+            withTimeout(30000L) {
                 chatModel.call(
                     SpringAiPrompt(
                         prompt.template,
-                        chatOptions
+                        buildChatOptions(prompt.parameters)
                     )
                 )
             }
-
-            // 응답 파싱
-            parseResponse(prompt, response)
-
-        } catch (e: AiCoreException) {
-            // Domain Exception은 그대로 throw
-            throw e
-        } catch (e: TimeoutCancellationException) {
-            throw LlmTimeoutException(
-                timeoutMs = 30000L
-            )
-        } catch (e: Exception) {
-            handleException(e)
-        }
+        }.fold(
+            onSuccess = { response -> parseResponse(prompt, response) },
+            onFailure = { e ->
+                when (e) {
+                    is AiCoreException -> throw e
+                    is TimeoutCancellationException -> throw LlmTimeoutException(timeoutMs = 30000L)
+                    else -> handleException(e)
+                }
+            }
+        )
     }
 
     /**
      * PromptParameters를 Spring AI의 OpenAiChatOptions로 변환
      */
-    private fun buildChatOptions(params: PromptParameters): OpenAiChatOptions {
-        // OpenAI 전용 옵션 변환
-        val openAiOptions = OpenAiSpecificOptions.fromMap(params.providerSpecificOptions)
-
-        return OpenAiChatOptions.builder()
+    private fun buildChatOptions(params: PromptParameters): OpenAiChatOptions =
+        OpenAiChatOptions.builder()
             .apply {
-                // 공통 파라미터 (Spring AI 2.0.0-M1에서 with prefix 제거됨)
                 temperature(params.temperature.toDouble())
                 params.maxTokens?.let { maxTokens(it) }
                 params.maxCompletionTokens?.let { maxCompletionTokens(it) }
@@ -87,16 +74,13 @@ class OpenAiPromptExecutor(
                 params.presencePenalty?.let { presencePenalty(it.toDouble()) }
                 params.stopSequences?.let { stop(it) }
 
-                // OpenAI 전용 파라미터
-                openAiOptions?.let { options ->
-                    // responseFormat 설정
+                OpenAiSpecificOptions.fromMap(params.providerSpecificOptions)?.let { options ->
                     options.responseFormat?.let { responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build()) }
                     options.seed?.let { seed(it) }
                     options.user?.let { user(it) }
                 }
             }
             .build()
-    }
 
     /**
      * Spring AI ChatResponse를 Domain PromptExecutionResult로 변환
@@ -104,9 +88,45 @@ class OpenAiPromptExecutor(
     private fun <I, O> parseResponse(
         prompt: Prompt<I, O>,
         response: ChatResponse
-    ): PromptExecutionResult<O> {
-        // ChatResponse.results[0].output에서 AssistantMessage 가져오기
-        val generation = response.results.firstOrNull()
+    ): PromptExecutionResult<O> =
+        response.results.firstOrNull()
+            ?.let { generation ->
+                generation.output.text
+                    ?.let { content ->
+                        runCatching { objectMapper.readValue(content, prompt.outputType) }
+                            .getOrElse { e ->
+                                throw ResponseParsingException(
+                                    promptId = prompt.id,
+                                    responseContent = content,
+                                    targetType = prompt.outputType.simpleName,
+                                    message = e.message ?: "JSON parsing failed",
+                                    cause = e
+                                )
+                            }
+                            .let { parsedResult ->
+                                PromptExecutionResult(
+                                    result = parsedResult,
+                                    metadata = ExecutionMetadata(
+                                        model = prompt.model.modelId,
+                                        tokenUsage = response.metadata?.usage.let { usage ->
+                                            TokenUsage(
+                                                promptTokens = usage?.promptTokens ?: 0,
+                                                completionTokens = usage?.completionTokens ?: 0,
+                                                totalTokens = usage?.totalTokens ?: 0
+                                            )
+                                        },
+                                        finishReason = generation.metadata?.finishReason
+                                    )
+                                )
+                            }
+                    }
+                    ?: throw ResponseParsingException(
+                        promptId = prompt.id,
+                        responseContent = "",
+                        targetType = prompt.outputType.simpleName,
+                        message = "AssistantMessage text content is null"
+                    )
+            }
             ?: throw ResponseParsingException(
                 promptId = prompt.id,
                 responseContent = "",
@@ -114,73 +134,28 @@ class OpenAiPromptExecutor(
                 message = "No generation result in ChatResponse"
             )
 
-        // AssistantMessage.getText()로 텍스트 가져오기
-        val content = generation.output.text
-            ?: throw ResponseParsingException(
-                promptId = prompt.id,
-                responseContent = "",
-                targetType = prompt.outputType.simpleName,
-                message = "AssistantMessage text content is null"
-            )
-
-        // JSON 역직렬화
-        val parsedResult = try {
-            objectMapper.readValue(content, prompt.outputType)
-        } catch (e: Exception) {
-            throw ResponseParsingException(
-                promptId = prompt.id,
-                responseContent = content,
-                targetType = prompt.outputType.simpleName,
-                message = e.message ?: "JSON parsing failed",
-                cause = e
-            )
-        }
-
-        // 메타데이터 구성
-        val usage = response.metadata?.usage
-        val metadata = ExecutionMetadata(
-            model = prompt.model.modelId,
-            tokenUsage = TokenUsage(
-                promptTokens = usage?.promptTokens ?: 0,
-                completionTokens = usage?.completionTokens ?: 0,
-                totalTokens = usage?.totalTokens ?: 0
-            ),
-            finishReason = generation.metadata?.finishReason
-        )
-
-        return PromptExecutionResult(
-            result = parsedResult,
-            metadata = metadata
-        )
-    }
-
     /**
      * 예외 처리 및 Domain Exception으로 변환
      */
-    private fun handleException(e: Exception): Nothing {
+    private fun handleException(e: Throwable): Nothing =
         when {
-            // 인증 실패
-            e.message?.contains("401") == true || e.message?.contains("Unauthorized") == true -> {
+            e.message?.let { it.contains("401") || it.contains("Unauthorized") } == true ->
                 throw LlmAuthenticationException(
                     message = "OpenAI API authentication failed. Please check your API key."
                 )
-            }
-            // Rate limit
-            e.message?.contains("429") == true || e.message?.contains("rate limit") == true -> {
+
+            e.message?.let { it.contains("429") || it.contains("rate limit") } == true ->
                 throw LlmRateLimitException(
-                    retryAfterSeconds = null,  // Spring AI에서 Retry-After 헤더 파싱 필요
+                    retryAfterSeconds = null,
                     message = "OpenAI API rate limit exceeded"
                 )
-            }
-            // 기타 API 에러
-            else -> {
+
+            else ->
                 throw LlmApiException(
                     statusCode = null,
                     errorBody = e.message,
                     message = "OpenAI API error: ${e.message}",
                     cause = e
                 )
-            }
         }
-    }
 }

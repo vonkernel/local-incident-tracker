@@ -49,24 +49,13 @@ class PromptOrchestrator(
         input: I,
         inputType: Class<I>,
         outputType: Class<O>
-    ): PromptExecutionResult<O> {
-        // 1. 프롬프트 로드
-        val prompt = promptLoader.load(promptId, inputType, outputType)
-
-        // 2. 입력 객체를 JSON serialize하여 필드 추출
-        val inputFields = extractInputFields(input)
-
-        // 3. 템플릿 변수 치환
-        val resolvedPrompt = resolveTemplate(prompt, inputFields)
-
-        // 4. Provider에 맞는 Executor 선택
-        val provider = prompt.model.provider
-        val executor = executors.firstOrNull { it.supports(provider) }
-            ?: throw UnsupportedProviderException(provider)
-
-        // 5. 실행
-        return executor.execute(resolvedPrompt, input)
-    }
+    ): PromptExecutionResult<O> =
+        resolveTemplate(promptLoader.load(promptId, inputType, outputType), extractInputFields(input))
+            .let { resolvedPrompt ->
+                executors.firstOrNull { it.supports(resolvedPrompt.model.provider) }
+                    ?.execute(resolvedPrompt, input)
+                    ?: throw UnsupportedProviderException(resolvedPrompt.model.provider)
+            }
 
     /**
      * 여러 프롬프트를 병렬로 실행
@@ -103,22 +92,21 @@ class PromptOrchestrator(
      * @param input 입력 객체
      * @return 필드명 → 값의 Map
      */
-    private fun <I> extractInputFields(input: I): Map<String, Any> {
-        val jsonNode = objectMapper.valueToTree<JsonNode>(input)
-        val fieldsMap = mutableMapOf<String, Any>()
+    private fun <I> extractInputFields(input: I): Map<String, Any> =
+        objectMapper.valueToTree<JsonNode>(input)
+            .properties()
+            .associate { (key, value) -> key to value.toValue() }
 
-        jsonNode.fields().forEach { (key, value) ->
-            fieldsMap[key] = when {
-                value.isTextual -> value.asText()
-                value.isNumber -> value.numberValue()
-                value.isBoolean -> value.asBoolean()
-                value.isArray || value.isObject -> value.toString()
-                value.isNull -> "null"
-                else -> value.asText()
-            }
-        }
-
-        return fieldsMap
+    /**
+     * JsonNode를 적절한 Kotlin 타입으로 변환
+     */
+    private fun JsonNode.toValue(): Any = when {
+        this.isTextual -> this.asText()
+        this.isNumber -> this.numberValue()
+        this.isBoolean -> this.asBoolean()
+        this.isArray || this.isObject -> this.toString()
+        this.isNull -> "null"
+        else -> this.asText()
     }
 
     /**
@@ -139,28 +127,60 @@ class PromptOrchestrator(
     private fun <I, O> resolveTemplate(
         prompt: Prompt<I, O>,
         inputFields: Map<String, Any>
-    ): Prompt<I, O> {
-        // 템플릿에서 {{variable}} 패턴 찾기
-        val variablePattern = Regex("""\{\{(\w+)\}\}""")
-        val requiredVariables = variablePattern.findAll(prompt.template)
+    ): Prompt<I, O> =
+        extractTemplateVariables(prompt.template)
+            .also { required -> validateTemplateVariables(prompt.id, required, inputFields.keys) }
+            .let { replaceTemplateVariables(prompt.template, inputFields) }
+            .let { resolved -> prompt.copy(template = resolved) }
+
+    /**
+     * 템플릿에서 필요한 변수 이름 추출
+     *
+     * @param template 프롬프트 템플릿
+     * @return 변수 이름 Set
+     */
+    private fun extractTemplateVariables(template: String): Set<String> =
+        Regex("""\{\{(\w+)\}\}""")
+            .findAll(template)
             .map { it.groupValues[1] }
             .toSet()
 
-        // 누락된 변수 확인
-        val missingVariables = requiredVariables - inputFields.keys
-        if (missingVariables.isNotEmpty()) {
-            throw TemplateResolutionException(
-                promptId = prompt.id,
-                missingVariables = missingVariables.toList()
-            )
-        }
-
-        // 변수 치환
-        val resolvedTemplate = variablePattern.replace(prompt.template) { matchResult ->
-            val variableName = matchResult.groupValues[1]
-            inputFields[variableName]?.toString() ?: matchResult.value
-        }
-
-        return prompt.copy(template = resolvedTemplate)
+    /**
+     * 템플릿에 필요한 변수가 모두 제공되었는지 검증
+     *
+     * @param promptId 프롬프트 ID
+     * @param required 필요한 변수 Set
+     * @param available 제공된 변수 Set
+     * @throws TemplateResolutionException 변수가 누락된 경우
+     */
+    private fun validateTemplateVariables(
+        promptId: String,
+        required: Set<String>,
+        available: Set<String>
+    ) {
+        (required - available)
+            .takeIf { it.isNotEmpty() }
+            ?.let { missing ->
+                throw TemplateResolutionException(
+                    promptId = promptId,
+                    missingVariables = missing.toList()
+                )
+            }
     }
+
+    /**
+     * 템플릿 변수를 실제 값으로 치환
+     *
+     * @param template 원본 템플릿
+     * @param inputFields 입력 필드 Map
+     * @return 변수가 치환된 템플릿
+     */
+    private fun replaceTemplateVariables(
+        template: String,
+        inputFields: Map<String, Any>
+    ): String =
+        Regex("""\{\{(\w+)\}\}""")
+            .replace(template) { match ->
+                inputFields[match.groupValues[1]]?.toString() ?: match.value
+            }
 }
