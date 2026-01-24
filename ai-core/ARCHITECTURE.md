@@ -33,7 +33,7 @@ data class Prompt<I, O>(
 
 data class PromptParameters(
     // 공통 파라미터 (모든 Provider 지원)
-    val temperature: Float = 0.7f,
+    val temperature: Float = 1.0f,
     val maxTokens: Int? = null,
     val topP: Float? = null,
     val frequencyPenalty: Float? = null,
@@ -2014,7 +2014,7 @@ fun `should deserialize all expected OpenAI response fields`() {
 3. **Phase 3**: 통합 및 테스트
    - analyzer 모듈에서 ai-core 사용
    - 실제 OpenAI API 호출 테스트
-   - 에러 핸들링 및 재시도 로직 추가
+   - 에러 핸들링  재시도 로직 추가
 
 4. **Phase 4**: 확장
    - Anthropic Claude 지원 추가
