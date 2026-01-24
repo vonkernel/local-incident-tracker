@@ -97,6 +97,7 @@ flowchart TD
 | JDK | 21 | 런타임 |
 | Kotlin | 2.21 | 프로그래밍 언어 |
 | Spring Boot | 4.0 | 프레임워크 |
+| Spring AI | 2.0 | LLM 통합 프레임워크 |
 | Gradle | 9.2.1 | 빌드 도구 |
 | PostgreSQL | 18 | RDBMS (프로덕션은 Aurora) |
 | Kafka | 3.8 | 이벤트 큐 |
@@ -115,6 +116,11 @@ local-incident-tracker/
 │
 ├── shared/                       # 공유 데이터 모델 (모든 서비스에서 사용)
 │   ├── build.gradle.kts
+│   └── src/
+│
+├── ai-core/                      # LLM 프롬프트 실행 라이브러리 (analyzer가 사용)
+│   ├── build.gradle.kts
+│   ├── README.md
 │   └── src/
 │
 ├── collector/                    # 데이터 수집기 서비스
@@ -196,6 +202,17 @@ OpenSearch에서 효율적인 검색과 필터링을 위해 최적화된 구조�
 - **Article**: 원본 기사 데이터 (Collector → RDBMS → Analyzer)
 - **AnalysisResult**: 분석 결과 데이터 (Analyzer → RDBMS → Indexer)
 - **ArticleIndexDocument**: 검색 인덱스 최적화 문서 (Indexer → OpenSearch ← Searcher)
+
+### ai-core (LLM 프롬프트 실행 라이브러리)
+Spring AI 기반의 타입 안전한 LLM 프롬프트 관리 및 실행 엔진을 제공하는 독립 라이브러리 모듈입니다. analyzer 서비스가 AI 기반 분석을 수행하는데 사용합니다.
+
+핵심 특징:
+- **Provider 독립성**: OpenAI, Anthropic 등 다양한 LLM 제공자를 동일 인터페이스로 사용
+- **프롬프트 외부화**: YAML 파일로 프롬프트 관리, 코드 변경 없이 수정 가능
+- **타입 안전성**: 제네릭 `Prompt<Input, Output>`로 컴파일 타임 타입 검증
+- **비동기/병렬 실행**: Kotlin Coroutines 기반으로 효율적인 I/O 처리 및 병렬 실행
+
+자세한 내용은 [`ai-core/README.md`](ai-core/README.md)를 참조하세요.
 
 ### collector (데이터 수집기 - 데이터 파이프라인)
 연합뉴스 재난 API에서 지정된 날짜로부터 실시간 사건사고 데이터를 수집하여 정규화하고 PostgreSQL에 저장합니다.
@@ -302,6 +319,8 @@ JPA Entity와 Flyway 데이터베이스 마이그레이션을 관리합니다. D
 
 **특정 모듈 테스트 실행**
 ```bash
+./gradlew ai-core:test                    # ai-core Unit Test
+./gradlew ai-core:integrationTest         # ai-core Integration Test (OpenAI API 호출)
 ./gradlew collector:test
 ./gradlew analyzer:test
 ./gradlew indexer:test
