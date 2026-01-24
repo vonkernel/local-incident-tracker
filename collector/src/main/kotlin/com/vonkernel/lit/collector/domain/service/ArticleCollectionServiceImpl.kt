@@ -22,13 +22,12 @@ class ArticleCollectionServiceImpl(
 
     private val logger = LoggerFactory.getLogger(ArticleCollectionServiceImpl::class.java)
 
-    override suspend fun collectArticlesForDate(date: LocalDate) {
-        collectAllPages(date.toInqDtFormat())
-    }
+    override suspend fun collectArticlesForDate(date: LocalDate) =
+        collectAllPages(date.toApiDateFormat())
 
     // ========== Pure Functions ==========
 
-    private fun LocalDate.toInqDtFormat(): String =
+    private fun LocalDate.toApiDateFormat(): String =
         format(DateTimeFormatter.ofPattern("yyyyMMdd"))
 
     private fun calculateTotalPages(totalCount: Int): Int =
@@ -42,7 +41,7 @@ class ArticleCollectionServiceImpl(
             .filter { it.value.isFailure }
             .map { it.index + 1 }
 
-    private fun filterNewArticles(articles: List<Article>, existingIds: Set<String>): List<Article> =
+    private fun excludeExistingArticles(articles: List<Article>, existingIds: Set<String>): List<Article> =
         articles.filter { it.articleId !in existingIds }
 
     private fun validateArticles(items: List<Article>): List<Article> =
@@ -51,34 +50,39 @@ class ArticleCollectionServiceImpl(
     // ========== Effect Functions (with side effects) ==========
 
     private suspend fun collectAllPages(inqDt: String) {
-        val firstPage = fetchPageWithRetry(inqDt, pageNo = 1)
-        val totalPages = calculateTotalPages(firstPage.totalCount)
-        val firstPageResult = runCatching { processAndSave(firstPage.articles) }
-        val remainingResults = collectRemainingPages(inqDt, 2..totalPages)
-
-        handleFailedPages(inqDt, firstPageResult, remainingResults)
+        fetchPageWithRetry(inqDt, pageNo = 1)
+            .let { firstPage ->
+                Pair(
+                    runCatching { saveValidatedArticles(firstPage.articles) },
+                    collectRemainingPages(inqDt, 2..calculateTotalPages(firstPage.totalCount))
+                )
+            }
+            .let { (firstPageResult, remainingResults) ->
+                retryFailedPagesIfAny(inqDt, firstPageResult, remainingResults)
+            }
     }
 
     private suspend fun collectRemainingPages(inqDt: String, pageRange: IntRange): List<Result<Unit>> =
-        pageRange.map { pageNo -> fetchAndProcess(inqDt, pageNo) }
+        pageRange.map { pageNo -> fetchAndSaveArticles(inqDt, pageNo) }
 
-    private suspend fun handleFailedPages(
+    private suspend fun retryFailedPagesIfAny(
         inqDt: String,
         firstPageResult: Result<Unit>,
         remainingResults: List<Result<Unit>>
     ) {
-        val allResults = listOf(firstPageResult) + remainingResults
-        val failedPages = extractFailedPageNumbers(allResults.withIndex().toList())
-
-        if (failedPages.isNotEmpty()) {
-            logAndRetryFailedPages(inqDt, failedPages)
-        }
+        (listOf(firstPageResult) + remainingResults)
+            .withIndex()
+            .toList()
+            .let(::extractFailedPageNumbers)
+            .takeIf { it.isNotEmpty() }
+            ?.let { failedPages -> retryFailedPages(inqDt, failedPages) }
     }
 
-    private suspend fun logAndRetryFailedPages(inqDt: String, failedPages: List<Int>) {
+    private suspend fun retryFailedPages(inqDt: String, failedPages: List<Int>) {
         logger.warn("Retrying ${failedPages.size} failed pages for $inqDt")
 
-        retryPages(inqDt, failedPages)
+        failedPages
+            .map { pageNo -> fetchAndSaveArticles(inqDt, pageNo, isRetry = true) }
             .withIndex()
             .filter { it.value.isFailure }
             .map { failedPages[it.index] }
@@ -88,26 +92,20 @@ class ArticleCollectionServiceImpl(
             }
     }
 
-    private suspend fun fetchAndProcess(inqDt: String, pageNo: Int): Result<Unit> =
+    private suspend fun fetchAndSaveArticles(
+        inqDt: String,
+        pageNo: Int,
+        isRetry: Boolean = false
+    ): Result<Unit> =
         runCatching {
             fetchPageWithRetry(inqDt, pageNo)
                 .articles
-                .also { processAndSave(it) }
+                .also { saveValidatedArticles(it) }
                 .let { }
-        }.onFailure { logger.error("Failed to fetch page $pageNo for $inqDt", it) }
-
-    private suspend fun retryPages(inqDt: String, pageNumbers: List<Int>): List<Result<Unit>> =
-        pageNumbers.map { pageNo ->
-            runCatching {
-                fetchPageWithRetry(inqDt, pageNo)
-                    .articles
-                    .also { processAndSave(it) }
-                    .let { }
-            }.onSuccess {
-                logger.info("Successfully retried page $pageNo")
-            }.onFailure { e ->
-                logger.error("Retry failed for page $pageNo", e)
-            }
+        }.onSuccess {
+            if (isRetry) logger.info("Successfully retried page $pageNo")
+        }.onFailure { e ->
+            logger.error("Failed to ${if (isRetry) "retry" else "fetch"} page $pageNo for $inqDt", e)
         }
 
     private suspend fun fetchPageWithRetry(
@@ -131,14 +129,14 @@ class ArticleCollectionServiceImpl(
         }
     }
 
-    private suspend fun processAndSave(items: List<Article>): Unit = withContext(Dispatchers.IO) {
+    private suspend fun saveValidatedArticles(items: List<Article>): Unit = withContext(Dispatchers.IO) {
         items
             .let(::validateArticles)
             .let { validArticles ->
                 validArticles
                     .map { it.articleId }
                     .let { articleRepository.filterNonExisting(it).toSet() }
-                    .let { nonExistingIds -> filterNewArticles(validArticles, nonExistingIds) }
+                    .let { nonExistingIds -> excludeExistingArticles(validArticles, nonExistingIds) }
             }
             .takeIf { it.isNotEmpty() }
             ?.let { articleRepository.saveAll(it) }
