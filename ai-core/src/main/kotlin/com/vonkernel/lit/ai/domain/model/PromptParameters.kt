@@ -16,8 +16,9 @@ package com.vonkernel.lit.ai.domain.model
  * @property providerSpecificOptions 제공자별 고유 옵션 (예: OpenAI의 responseFormat)
  */
 data class PromptParameters(
-    val temperature: Float = 0.7f,
+    val temperature: Float = 1.0f,
     val maxTokens: Int? = null,
+    val maxCompletionTokens: Int? = null,
     val topP: Float? = null,
     val frequencyPenalty: Float? = null,
     val presencePenalty: Float? = null,

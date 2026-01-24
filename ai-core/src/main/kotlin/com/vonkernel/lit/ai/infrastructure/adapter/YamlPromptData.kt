@@ -16,8 +16,9 @@ data class YamlPromptData(
  * YAML 파일의 parameters 섹션
  */
 data class YamlPromptParameters(
-    val temperature: Float = 0.7f,
+    val temperature: Float = 1.0f,
     val maxTokens: Int? = null,
+    val maxCompletionTokens: Int? = null,
     val topP: Float? = null,
     val frequencyPenalty: Float? = null,
     val presencePenalty: Float? = null,
