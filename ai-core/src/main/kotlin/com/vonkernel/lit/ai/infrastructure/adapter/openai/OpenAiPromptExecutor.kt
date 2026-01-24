@@ -1,17 +1,8 @@
 package com.vonkernel.lit.ai.infrastructure.adapter.openai
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.vonkernel.lit.ai.domain.exception.LlmApiException
-import com.vonkernel.lit.ai.domain.exception.LlmAuthenticationException
-import com.vonkernel.lit.ai.domain.exception.LlmRateLimitException
-import com.vonkernel.lit.ai.domain.exception.LlmTimeoutException
-import com.vonkernel.lit.ai.domain.exception.ResponseParsingException
-import com.vonkernel.lit.ai.domain.model.ExecutionMetadata
-import com.vonkernel.lit.ai.domain.model.LlmProvider
-import com.vonkernel.lit.ai.domain.model.Prompt
-import com.vonkernel.lit.ai.domain.model.PromptExecutionResult
-import com.vonkernel.lit.ai.domain.model.PromptParameters
-import com.vonkernel.lit.ai.domain.model.TokenUsage
+import com.vonkernel.lit.ai.domain.exception.*
+import com.vonkernel.lit.ai.domain.model.*
 import com.vonkernel.lit.ai.domain.port.PromptExecutor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -20,6 +11,7 @@ import kotlinx.coroutines.withTimeout
 import org.springframework.ai.chat.model.ChatModel
 import org.springframework.ai.chat.model.ChatResponse
 import org.springframework.ai.openai.OpenAiChatOptions
+import org.springframework.ai.openai.api.ResponseFormat
 import org.springframework.stereotype.Component
 import org.springframework.ai.chat.prompt.Prompt as SpringAiPrompt
 
@@ -65,6 +57,9 @@ class OpenAiPromptExecutor(
             // 응답 파싱
             parseResponse(prompt, response)
 
+        } catch (e: AiCoreException) {
+            // Domain Exception은 그대로 throw
+            throw e
         } catch (e: TimeoutCancellationException) {
             throw LlmTimeoutException(
                 timeoutMs = 30000L
@@ -78,18 +73,27 @@ class OpenAiPromptExecutor(
      * PromptParameters를 Spring AI의 OpenAiChatOptions로 변환
      */
     private fun buildChatOptions(params: PromptParameters): OpenAiChatOptions {
+        // OpenAI 전용 옵션 변환
+        val openAiOptions = OpenAiSpecificOptions.fromMap(params.providerSpecificOptions)
+
         return OpenAiChatOptions.builder()
             .apply {
                 // 공통 파라미터 (Spring AI 2.0.0-M1에서 with prefix 제거됨)
                 temperature(params.temperature.toDouble())
                 params.maxTokens?.let { maxTokens(it) }
+                params.maxCompletionTokens?.let { maxCompletionTokens(it) }
                 params.topP?.let { topP(it.toDouble()) }
                 params.frequencyPenalty?.let { frequencyPenalty(it.toDouble()) }
                 params.presencePenalty?.let { presencePenalty(it.toDouble()) }
                 params.stopSequences?.let { stop(it) }
 
-                // OpenAI 전용 파라미터는 일단 기본 설정만 사용
-                // responseFormat, seed 등은 필요 시 추가
+                // OpenAI 전용 파라미터
+                openAiOptions?.let { options ->
+                    // responseFormat 설정
+                    options.responseFormat?.let { responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build()) }
+                    options.seed?.let { seed(it) }
+                    options.user?.let { user(it) }
+                }
             }
             .build()
     }
