@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: collector
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/incident_tracker
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+safety-data:
+  api:
+    url: https://www.safetydata.go.kr
+    key: ${SAFETY_DATA_API_KEY:}
+
+server:
+  port: 8081
