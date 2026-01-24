@@ -1,0 +1,11 @@
+# Spring AI OpenAI Configuration
+# API Key는 환경 변수 SPRING_AI_OPENAI_API_KEY로 설정
+
+spring:
+  ai:
+    openai:
+      api-key: ${SPRING_AI_OPENAI_API_KEY:your-api-key-here}
+      chat:
+        options:
+          model: gpt-5-mini
+          temperature: 0.7
