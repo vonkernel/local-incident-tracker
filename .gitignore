@@ -42,3 +42,4 @@ out/
 ### Local Configuration ###
 CLAUDE.local.md
 gradle.properties
+*.env.local
