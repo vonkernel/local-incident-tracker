@@ -1,0 +1,19 @@
+id: summarize
+model: GPT_5_MINI
+template: |
+  다음 텍스트를 {{maxLength}}자 이내로 요약하세요.
+
+  텍스트:
+  {{text}}
+
+  응답 형식: JSON
+  {
+    "summary": "요약된 텍스트",
+    "keyPoints": ["핵심 포인트 1", "핵심 포인트 2"]
+  }
+
+parameters:
+  temperature: 1.0
+  maxCompletionTokens: 2048
+  providerSpecificOptions:
+    responseFormat: "json_object"
