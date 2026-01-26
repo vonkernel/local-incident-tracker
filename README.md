@@ -14,7 +14,7 @@
 
 ## 아키텍처 설계 철학
 
-이 프로젝트는 **CQRS(Command Query Responsibility Segregation)**와 **이벤트 기반 아키텍처**를 기반으로 설계되었습니다:
+이 프로젝트는 **CQRS**(Command Query Responsibility Segregation)와 **이벤트 기반 아키텍처**를 기반으로 설계되었습니다:
 
 - **CQRS 패턴**: 데이터 쓰기(Write)와 조회(Read)를 분리하여 각각 최적화
   - Write Model: PostgreSQL (트랜잭션 일관성, 데이터 무결성)
