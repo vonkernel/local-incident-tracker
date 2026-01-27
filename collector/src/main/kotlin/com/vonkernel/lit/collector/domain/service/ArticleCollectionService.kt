@@ -1,6 +1,5 @@
 package com.vonkernel.lit.collector.domain.service
 
-import com.vonkernel.lit.entity.Article
 import java.time.LocalDate
 
 interface ArticleCollectionService {

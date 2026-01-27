@@ -5,16 +5,17 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.UUID
+import java.util.*
 
 private const val SOURCE_ID = "yonhapnews"
 private val publishedAtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+private val publishedDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val createdAtFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss.SSSSSSSSS")
 private val seoulZone = ZoneId.of("Asia/Seoul")
 
 fun YonhapnewsArticle.toArticle(): Article {
     return Article(
-        articleId = UUID.randomUUID().toString(),
+        articleId = "${parsePublishedDate(this.publishedAt)}-${this.articleNo}",
         originId = this.articleNo.toString(),
         sourceId = SOURCE_ID,
         writtenAt = parsePublishedAt(this.publishedAt),
@@ -25,10 +26,14 @@ fun YonhapnewsArticle.toArticle(): Article {
     )
 }
 
-private fun parsePublishedAt(dateStr: String): Instant {
-    return LocalDateTime.parse(dateStr, publishedAtFormatter).atZone(seoulZone).toInstant()
-}
+private fun parsePublishedDate(dateStr: String): String =
+    parsePublishedAt(dateStr)
+        .atZone(ZoneId.of("Asia/Seoul"))
+        .format(publishedDateFormatter.withLocale(Locale.KOREA))
 
-private fun parseCreatedAt(dateStr: String): Instant {
-    return LocalDateTime.parse(dateStr, createdAtFormatter).atZone(seoulZone).toInstant()
-}
+
+private fun parsePublishedAt(dateStr: String): Instant =
+    LocalDateTime.parse(dateStr, publishedAtFormatter).atZone(seoulZone).toInstant()
+
+private fun parseCreatedAt(dateStr: String): Instant =
+    LocalDateTime.parse(dateStr, createdAtFormatter).atZone(seoulZone).toInstant()
