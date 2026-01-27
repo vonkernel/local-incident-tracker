@@ -24,7 +24,7 @@ class SafetyDataApiAdapter(
         val response = webClient.get()
             .uri { uriBuilder ->
                 uriBuilder
-                    .path("/api/DSSP-IF-00051")
+                    .path("/V2/api/DSSP-IF-00051")
                     .queryParam("serviceKey", apiKey)
                     .queryParam("inqDt", inqDt)
                     .queryParam("pageNo", pageNo)
