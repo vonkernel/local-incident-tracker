@@ -43,3 +43,4 @@ out/
 CLAUDE.local.md
 gradle.properties
 *.env.local
+*.hprof
