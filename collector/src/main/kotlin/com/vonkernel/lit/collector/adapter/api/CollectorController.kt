@@ -17,7 +17,11 @@ class CollectorController(
     @PostMapping("/backfill")
     suspend fun backfill(@RequestBody request: BackfillRequest): ResponseEntity<*> =
         LocalDate.parse(request.startDate).run {
-            articleCollectionService.collectArticlesForDate(this)
+            articleCollectionService.collectArticlesForDate(this, PAGE_SIZE)
             ResponseEntity.noContent().build<Unit>()
         }
+
+    companion object {
+        private const val PAGE_SIZE = 1000
+    }
 }

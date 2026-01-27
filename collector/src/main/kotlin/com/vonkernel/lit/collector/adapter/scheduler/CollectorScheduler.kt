@@ -19,9 +19,13 @@ class CollectorScheduler(
     fun collectTodayArticles() = runBlocking {
         LocalDate.now(ZoneId.of("Asia/Seoul")).let { today ->
             logger.info("Starting collection for date: $today")
-            runCatching { articleCollectionService.collectArticlesForDate(today) }
+            runCatching { articleCollectionService.collectArticlesForDate(today, PAGE_SIZE) }
                 .onSuccess { logger.info("Successfully collected articles for $today") }
                 .onFailure { e -> logger.error("Failed to collect articles for $today", e) }
         }
+    }
+
+    companion object {
+        private const val PAGE_SIZE = 1000
     }
 }
