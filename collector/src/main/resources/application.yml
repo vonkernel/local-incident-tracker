@@ -3,9 +3,9 @@ spring:
     name: collector
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/incident_tracker
-    username: postgres
-    password: postgres
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/lit_maindb}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
   jpa:
