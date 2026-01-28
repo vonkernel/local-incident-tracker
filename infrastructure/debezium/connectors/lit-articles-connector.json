@@ -1,0 +1,24 @@
+{
+  "name": "lit-articles-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "lit-maindb",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "lit_maindb",
+    "database.server.name": "lit",
+    "table.include.list": "public.article",
+    "topic.prefix": "lit",
+    "plugin.name": "pgoutput",
+    "publication.autocreate.mode": "filtered",
+    "publication.name": "dbz_articles_pub",
+    "slot.name": "debezium_articles",
+    "heartbeat.interval.ms": "10000",
+    "message.key.columns": "public.article:article_id",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false"
+  }
+}
