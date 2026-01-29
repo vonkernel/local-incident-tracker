@@ -10,6 +10,7 @@ template: |
 
   아래 목록에서만 선택하세요. 목록에 없는 유형은 사용하지 마세요.
 
+  - $code: $name
   {{incidentTypeList}}
 
   ## 분류 기준
@@ -34,7 +35,7 @@ template: |
   }
 
 parameters:
-  temperature: 0.1
-  maxCompletionTokens: 500
+  temperature: 1
+  maxCompletionTokens: 2048
   providerSpecificOptions:
     responseFormat: "json_object"

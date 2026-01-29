@@ -9,6 +9,7 @@ template: |
 
   아래 목록에서만 선택하세요. 목록에 없는 수준은 사용하지 마세요.
 
+  - $name (level: $level)
   {{urgencyTypeList}}
 
   ## 판단 지침
@@ -34,7 +35,7 @@ template: |
   }
 
 parameters:
-  temperature: 0.1
-  maxCompletionTokens: 200
+  temperature: 1
+  maxCompletionTokens: 2048
   providerSpecificOptions:
     responseFormat: "json_object"
