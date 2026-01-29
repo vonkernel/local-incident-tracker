@@ -26,7 +26,7 @@ class ArticleEventListener(
         try {
             val envelope = objectMapper.readValue(record.value(), DebeziumEnvelope::class.java)
 
-            if (envelope.op != "c") {
+            if (envelope.op != "c" && envelope.op != "r") {
                 log.debug("Ignoring non-create CDC event: op={}", envelope.op)
                 return
             }
