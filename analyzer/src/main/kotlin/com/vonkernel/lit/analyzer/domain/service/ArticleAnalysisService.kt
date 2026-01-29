@@ -1,0 +1,95 @@
+package com.vonkernel.lit.analyzer.domain.service
+
+import com.vonkernel.lit.analyzer.domain.analyzer.IncidentTypeAnalyzer
+import com.vonkernel.lit.analyzer.domain.analyzer.KeywordAnalyzer
+import com.vonkernel.lit.analyzer.domain.analyzer.LocationAnalyzer
+import com.vonkernel.lit.analyzer.domain.analyzer.UrgencyAnalyzer
+import com.vonkernel.lit.analyzer.domain.model.ExtractedLocation
+import com.vonkernel.lit.analyzer.domain.model.LocationType
+import com.vonkernel.lit.analyzer.domain.port.GeocodingPort
+import com.vonkernel.lit.core.entity.Address
+import com.vonkernel.lit.core.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.Article
+import com.vonkernel.lit.core.entity.Location
+import com.vonkernel.lit.core.entity.RegionType
+import com.vonkernel.lit.core.repository.AnalysisResultRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+
+@Service
+class ArticleAnalysisService(
+    private val incidentTypeAnalyzer: IncidentTypeAnalyzer,
+    private val urgencyAnalyzer: UrgencyAnalyzer,
+    private val keywordAnalyzer: KeywordAnalyzer,
+    private val locationAnalyzer: LocationAnalyzer,
+    private val geocodingPort: GeocodingPort,
+    private val analysisResultRepository: AnalysisResultRepository
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    suspend fun analyze(article: Article) {
+        log.info("Starting analysis for article: {}", article.articleId)
+
+        if (analysisResultRepository.existsByArticleId(article.articleId)) {
+            log.info("Existing analysis found for article: {}, deleting before re-analysis", article.articleId)
+            analysisResultRepository.deleteByArticleId(article.articleId)
+        }
+
+        val analysisResult = coroutineScope {
+            val incidentTypes = async { incidentTypeAnalyzer.analyze(article) }
+            val urgency = async { urgencyAnalyzer.analyze(article) }
+            val keywords = async { keywordAnalyzer.analyze(article) }
+            val extractedLocations = async { locationAnalyzer.analyze(article) }
+
+            val locations = resolveLocations(extractedLocations.await())
+
+            AnalysisResult(
+                articleId = article.articleId,
+                incidentTypes = incidentTypes.await(),
+                urgency = urgency.await(),
+                keywords = keywords.await().keywords,
+                locations = locations
+            )
+        }
+
+        analysisResultRepository.save(analysisResult)
+        log.info("Analysis completed and saved for article: {}", article.articleId)
+    }
+
+    private suspend fun resolveLocations(extractedLocations: List<ExtractedLocation>): List<Location> =
+        coroutineScope {
+            extractedLocations.map { extracted ->
+                async { resolveLocation(extracted) }
+            }.awaitAll().flatten()
+        }
+
+    private suspend fun resolveLocation(extracted: ExtractedLocation): List<Location> =
+        when (extracted.type) {
+            LocationType.ADDRESS -> resolveAddress(extracted.name)
+            LocationType.LANDMARK -> resolveLandmark(extracted.name)
+            LocationType.UNRESOLVABLE -> listOf(unresolvedLocation(extracted.name))
+        }
+
+    private suspend fun resolveAddress(name: String): List<Location> =
+        geocodingPort.geocodeByAddress(name)
+            .ifEmpty { geocodingPort.geocodeByKeyword(name) }
+            .ifEmpty { listOf(unresolvedLocation(name)) }
+
+    private suspend fun resolveLandmark(name: String): List<Location> =
+        geocodingPort.geocodeByKeyword(name)
+            .ifEmpty { geocodingPort.geocodeByAddress(name) }
+            .ifEmpty { listOf(unresolvedLocation(name)) }
+
+    private fun unresolvedLocation(name: String): Location =
+        Location(
+            coordinate = null,
+            address = Address(
+                regionType = RegionType.UNKNOWN,
+                code = "UNKNOWN",
+                addressName = name
+            )
+        )
+}
