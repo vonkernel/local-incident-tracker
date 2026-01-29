@@ -7,13 +7,14 @@ import com.vonkernel.lit.analyzer.domain.service.ArticleAnalysisService
 import kotlinx.coroutines.runBlocking
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.stereotype.Component
 
 @Component
 class ArticleEventListener(
     private val articleAnalysisService: ArticleAnalysisService,
-    private val objectMapper: ObjectMapper
+    @param:Qualifier("debeziumObjectMapper") private val objectMapper: ObjectMapper
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
