@@ -1,14 +1,8 @@
 import org.springframework.boot.gradle.tasks.bundling.BootJar
 
-val springAiVersion = "2.0.0-M1"
-
-dependencyManagement {
-    imports {
-        mavenBom("org.springframework.ai:spring-ai-bom:$springAiVersion")
-    }
-}
-
 dependencies {
+    implementation(platform("org.springframework.ai:spring-ai-bom:2.0.0-M1"))
+
     // Spring AI - OpenAI starter (버전은 BOM에서 관리)
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
 
