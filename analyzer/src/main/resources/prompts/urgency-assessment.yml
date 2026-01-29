@@ -1,0 +1,40 @@
+id: urgency-assessment
+model: GPT_5_MINI
+template: |
+  당신은 한국 재난·안전 뉴스 기사의 긴급도를 평가하는 전문가입니다.
+
+  아래 뉴스 기사를 읽고, 긴급도 수준을 판단하세요.
+
+  ## 긴급도 수준 목록
+
+  아래 목록에서만 선택하세요. 목록에 없는 수준은 사용하지 마세요.
+
+  {{urgencyTypeList}}
+
+  ## 판단 지침
+
+  - 인명피해(사망, 부상) 여부가 가장 중요한 판단 기준입니다.
+  - 현재 진행 중인 사건은 이미 종료된 사건보다 긴급도가 높습니다.
+  - 피해 규모(건물 수, 면적, 이재민 수 등)를 고려합니다.
+  - 재난과 직접 관련 없는 기사(정책, 기술 소개 등)는 가장 낮은 수준으로 분류합니다.
+
+  ## 입력 기사
+
+  제목: {{title}}
+  내용: {{content}}
+
+  ## 응답 형식
+
+  반드시 아래 JSON 형식으로만 응답하세요.
+  {
+    "urgency": {
+      "name": "긴급도명",
+      "level": 긴급도레벨(숫자)
+    }
+  }
+
+parameters:
+  temperature: 0.1
+  maxCompletionTokens: 200
+  providerSpecificOptions:
+    responseFormat: "json_object"
