@@ -15,26 +15,21 @@ class DefaultIncidentTypeAnalyzer(
     private val incidentTypeRepository: IncidentTypeRepository
 ) : IncidentTypeAnalyzer {
 
-    override suspend fun analyze(article: Article): Set<IncidentType> {
-        val incidentTypes = incidentTypeRepository.findAll()
-        val incidentTypeItems = incidentTypes.map { IncidentTypeItem(code = it.code, name = it.name) }
-
-        val input = IncidentTypeClassificationInput(
-            title = article.title,
-            content = article.content,
-            incidentTypeList = IncidentTypeItem.formatList(incidentTypeItems)
-        )
-
-        val result = promptOrchestrator.execute(
-            promptId = "incident-type-classification",
-            input = input,
-            inputType = IncidentTypeClassificationInput::class.java,
-            outputType = IncidentTypeClassificationOutput::class.java
-        )
-
-        val validCodes = incidentTypes.associateBy { it.code }
-        return result.result.incidentTypes
-            .mapNotNull { item -> validCodes[item.code] }
-            .toSet()
-    }
+    override suspend fun analyze(article: Article): Set<IncidentType> =
+        incidentTypeRepository.findAll().let { incidentTypes ->
+            promptOrchestrator.execute(
+                promptId = "incident-type-classification",
+                input = IncidentTypeClassificationInput(
+                    title = article.title,
+                    content = article.content,
+                    incidentTypeList = IncidentTypeItem.formatList(
+                        incidentTypes.map { IncidentTypeItem(code = it.code, name = it.name) }
+                    )
+                ),
+                inputType = IncidentTypeClassificationInput::class.java,
+                outputType = IncidentTypeClassificationOutput::class.java
+            ).result.incidentTypes
+                .mapNotNull { item -> incidentTypes.associateBy { it.code }[item.code] }
+                .toSet()
+        }
 }

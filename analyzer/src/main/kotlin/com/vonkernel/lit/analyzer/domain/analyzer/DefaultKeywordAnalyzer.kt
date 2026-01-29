@@ -13,22 +13,16 @@ class DefaultKeywordAnalyzer(
     private val promptOrchestrator: PromptOrchestrator
 ) : KeywordAnalyzer {
 
-    override suspend fun analyze(article: Article): KeywordAnalysisResult {
-        val input = KeywordExtractionInput(
-            title = article.title,
-            content = article.content
-        )
-
-        val result = promptOrchestrator.execute(
+    override suspend fun analyze(article: Article): KeywordAnalysisResult =
+        promptOrchestrator.execute(
             promptId = "keyword-extraction",
-            input = input,
+            input = KeywordExtractionInput(title = article.title, content = article.content),
             inputType = KeywordExtractionInput::class.java,
             outputType = KeywordExtractionOutput::class.java
-        )
-
-        return KeywordAnalysisResult(
-            topic = result.result.topic,
-            keywords = result.result.keywords.map { Keyword(keyword = it.keyword, priority = it.priority) }
-        )
-    }
+        ).result.let { output ->
+            KeywordAnalysisResult(
+                topic = output.topic,
+                keywords = output.keywords.map { Keyword(keyword = it.keyword, priority = it.priority) }
+            )
+        }
 }

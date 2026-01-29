@@ -12,19 +12,11 @@ class DefaultLocationAnalyzer(
     private val promptOrchestrator: PromptOrchestrator
 ) : LocationAnalyzer {
 
-    override suspend fun analyze(article: Article): List<ExtractedLocation> {
-        val input = LocationExtractionInput(
-            title = article.title,
-            content = article.content
-        )
-
-        val result = promptOrchestrator.execute(
+    override suspend fun analyze(article: Article): List<ExtractedLocation> =
+        promptOrchestrator.execute(
             promptId = "location-extraction",
-            input = input,
+            input = LocationExtractionInput(title = article.title, content = article.content),
             inputType = LocationExtractionInput::class.java,
             outputType = LocationExtractionOutput::class.java
-        )
-
-        return result.result.locations
-    }
+        ).result.locations
 }

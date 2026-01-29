@@ -15,25 +15,22 @@ class DefaultUrgencyAnalyzer(
     private val urgencyRepository: UrgencyRepository
 ) : UrgencyAnalyzer {
 
-    override suspend fun analyze(article: Article): Urgency {
-        val urgencies = urgencyRepository.findAll()
-        val urgencyItems = urgencies.map { UrgencyItem(name = it.name, level = it.level) }
-
-        val input = UrgencyAssessmentInput(
-            title = article.title,
-            content = article.content,
-            urgencyTypeList = UrgencyItem.formatList(urgencyItems)
-        )
-
-        val result = promptOrchestrator.execute(
-            promptId = "urgency-assessment",
-            input = input,
-            inputType = UrgencyAssessmentInput::class.java,
-            outputType = UrgencyAssessmentOutput::class.java
-        )
-
-        val validUrgencies = urgencies.associateBy { it.name }
-        return validUrgencies[result.result.urgency.name]
-            ?: Urgency(name = result.result.urgency.name, level = result.result.urgency.level)
-    }
+    override suspend fun analyze(article: Article): Urgency =
+        urgencyRepository.findAll().let { urgencies ->
+            promptOrchestrator.execute(
+                promptId = "urgency-assessment",
+                input = UrgencyAssessmentInput(
+                    title = article.title,
+                    content = article.content,
+                    urgencyTypeList = UrgencyItem.formatList(
+                        urgencies.map { UrgencyItem(name = it.name, level = it.level) }
+                    )
+                ),
+                inputType = UrgencyAssessmentInput::class.java,
+                outputType = UrgencyAssessmentOutput::class.java
+            ).result.urgency.let { assessed ->
+                urgencies.associateBy { it.name }[assessed.name]
+                    ?: Urgency(name = assessed.name, level = assessed.level)
+            }
+        }
 }
