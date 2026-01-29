@@ -12,8 +12,10 @@ import com.vonkernel.lit.persistence.jpa.JpaAddressRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -125,8 +127,8 @@ class KakaoGeocodingAdapterTest {
         }
 
         @Test
-        @DisplayName("DB 캐시 miss + 주소 검색 성공 (b_code + h_code) - BJDONG + HADONG 2개 Location")
-        fun cacheMiss_bothCodes_returnsTwoLocations() = runTest {
+        @DisplayName("DB 캐시 miss + 주소 검색 성공 (b_code + h_code) - HADONG 우선 1개 Location")
+        fun cacheMiss_bothCodes_returnsHadongOnly() = runTest {
             // Given
             every { jpaAddressRepository.findByAddressName("서울 강남구") } returns null
             mockWebClientGetSingle(Mono.just(KakaoAddressResponse(defaultMeta, listOf(defaultAddressDocument))))
@@ -135,16 +137,10 @@ class KakaoGeocodingAdapterTest {
             val result = adapter.geocodeByAddress("서울 강남구")
 
             // Then
-            assertThat(result).hasSize(2)
-            assertThat(result.map { it.address.regionType }).containsExactlyInAnyOrder(RegionType.BJDONG, RegionType.HADONG)
-
-            val bjdong = result.first { it.address.regionType == RegionType.BJDONG }
-            assertThat(bjdong.address.code).isEqualTo("1168010600")
-            assertThat(bjdong.address.depth3Name).isEqualTo("역삼동")
-
-            val hadong = result.first { it.address.regionType == RegionType.HADONG }
-            assertThat(hadong.address.code).isEqualTo("1168010100")
-            assertThat(hadong.address.depth3Name).isEqualTo("역삼1동")
+            assertThat(result).hasSize(1)
+            assertThat(result[0].address.regionType).isEqualTo(RegionType.HADONG)
+            assertThat(result[0].address.code).isEqualTo("1168010100")
+            assertThat(result[0].address.depth3Name).isEqualTo("역삼1동")
         }
 
         @Test
@@ -217,17 +213,16 @@ class KakaoGeocodingAdapterTest {
         }
 
         @Test
-        @DisplayName("API 예외 발생 시 빈 리스트를 반환한다")
-        fun apiException_returnsEmpty() = runTest {
+        @DisplayName("API 예외 발생 시 예외가 그대로 전파된다")
+        fun apiException_propagatesException() = runTest {
             // Given
             every { jpaAddressRepository.findByAddressName("에러 테스트") } returns null
             mockWebClientGetSingle(Mono.error(RuntimeException("API 연결 실패")))
 
-            // When
-            val result = adapter.geocodeByAddress("에러 테스트")
-
-            // Then
-            assertThat(result).isEmpty()
+            // When & Then
+            assertThatThrownBy { runBlocking { adapter.geocodeByAddress("에러 테스트") } }
+                .isInstanceOf(RuntimeException::class.java)
+                .hasMessage("API 연결 실패")
         }
     }
 
@@ -259,8 +254,8 @@ class KakaoGeocodingAdapterTest {
         }
 
         @Test
-        @DisplayName("키워드 검색 성공 후 주소 검색으로 BJDONG/HADONG Location을 반환한다")
-        fun keywordThenAddress_returnsLocations() = runTest {
+        @DisplayName("키워드 검색 성공 후 주소 검색으로 HADONG Location을 반환한다")
+        fun keywordThenAddress_returnsHadongLocation() = runTest {
             // Given
             every { jpaAddressRepository.findByAddressName("강남역") } returns null
             val keywordResponse = KakaoKeywordResponse(defaultMeta, listOf(defaultKeywordDocument))
@@ -271,12 +266,9 @@ class KakaoGeocodingAdapterTest {
             val result = adapter.geocodeByKeyword("강남역")
 
             // Then
-            assertThat(result).hasSize(2)
-            assertThat(result.map { it.address.regionType }).containsExactlyInAnyOrder(RegionType.BJDONG, RegionType.HADONG)
-            // addressName should be original query, not Kakao's response
-            result.forEach { loc ->
-                assertThat(loc.address.addressName).isEqualTo("강남역")
-            }
+            assertThat(result).hasSize(1)
+            assertThat(result[0].address.regionType).isEqualTo(RegionType.HADONG)
+            assertThat(result[0].address.addressName).isEqualTo("강남역")
         }
 
         @Test
@@ -314,17 +306,16 @@ class KakaoGeocodingAdapterTest {
         }
 
         @Test
-        @DisplayName("API 예외 발생 시 빈 리스트를 반환한다")
-        fun apiException_returnsEmpty() = runTest {
+        @DisplayName("API 예외 발생 시 예외가 그대로 전파된다")
+        fun apiException_propagatesException() = runTest {
             // Given
             every { jpaAddressRepository.findByAddressName("에러 테스트") } returns null
             mockWebClientGetSingle(Mono.error(RuntimeException("API 연결 실패")))
 
-            // When
-            val result = adapter.geocodeByKeyword("에러 테스트")
-
-            // Then
-            assertThat(result).isEmpty()
+            // When & Then
+            assertThatThrownBy { runBlocking { adapter.geocodeByKeyword("에러 테스트") } }
+                .isInstanceOf(RuntimeException::class.java)
+                .hasMessage("API 연결 실패")
         }
     }
 }

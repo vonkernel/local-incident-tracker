@@ -13,6 +13,7 @@ import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.core.entity.Location
 import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.core.repository.AnalysisResultRepository
+import com.vonkernel.lit.core.util.executeWithRetry
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -49,10 +50,10 @@ class ArticleAnalysisService(
     }
 
     private suspend fun analyzeArticle(article: Article): AnalysisResult = coroutineScope {
-        val incidentTypes = async { incidentTypeAnalyzer.analyze(article) }
-        val urgency = async { urgencyAnalyzer.analyze(article) }
-        val keywords = async { keywordAnalyzer.analyze(article) }
-        val locations = async { locationAnalyzer.analyze(article) }
+        val incidentTypes = async { withRetry("incidentTypeAnalyzer") { incidentTypeAnalyzer.analyze(article) } }
+        val urgency = async { withRetry("urgencyAnalyzer") { urgencyAnalyzer.analyze(article) } }
+        val keywords = async { withRetry("keywordAnalyzer") { keywordAnalyzer.analyze(article) } }
+        val locations = async { withRetry("locationAnalyzer") { locationAnalyzer.analyze(article) } }
             .await()
             .let { resolveLocations(it) }
 
@@ -64,6 +65,11 @@ class ArticleAnalysisService(
             locations = locations
         )
     }
+
+    private suspend fun <T> withRetry(operationName: String, block: suspend () -> T): T =
+        executeWithRetry(maxRetries = 2, onRetry = { attempt, delay, e ->
+            log.warn("Retrying {} (attempt {}, delay {}ms): {}", operationName, attempt, delay, e.message)
+        }, block = block)
 
     private suspend fun resolveLocations(extractedLocations: List<ExtractedLocation>): List<Location> =
         coroutineScope {
@@ -81,14 +87,18 @@ class ArticleAnalysisService(
         }
 
     private suspend fun resolveAddress(name: String): List<Location> =
-        geocodingPort.geocodeByAddress(name)
-            .ifEmpty { geocodingPort.geocodeByKeyword(name) }
-            .ifEmpty { listOf(unresolvedLocation(name)) }
+        withRetry("geocodeByAddress") {
+            geocodingPort.geocodeByAddress(name)
+                .ifEmpty { geocodingPort.geocodeByKeyword(name) }
+                .ifEmpty { listOf(unresolvedLocation(name)) }
+        }
 
     private suspend fun resolveLandmark(name: String): List<Location> =
-        geocodingPort.geocodeByKeyword(name)
-            .ifEmpty { geocodingPort.geocodeByAddress(name) }
-            .ifEmpty { listOf(unresolvedLocation(name)) }
+        withRetry("geocodeByKeyword") {
+            geocodingPort.geocodeByKeyword(name)
+                .ifEmpty { geocodingPort.geocodeByAddress(name) }
+                .ifEmpty { listOf(unresolvedLocation(name)) }
+        }
 
     private fun unresolvedLocation(name: String): Location =
         Location(

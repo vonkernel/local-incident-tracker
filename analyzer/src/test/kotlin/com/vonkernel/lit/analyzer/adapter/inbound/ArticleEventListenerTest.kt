@@ -9,14 +9,12 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import java.time.Instant
 
 @DisplayName("ArticleEventListener 테스트")
 class ArticleEventListenerTest {
@@ -50,7 +48,7 @@ class ArticleEventListenerTest {
         coEvery { articleAnalysisService.analyze(any<Article>()) } returns Unit
 
         // When
-        listener.onArticleEvent(record)
+        listener.onArticleEvents(listOf(record))
 
         // Then
         coVerify(exactly = 1) { articleAnalysisService.analyze(any<Article>()) }
@@ -65,7 +63,7 @@ class ArticleEventListenerTest {
         every { objectMapper.readValue(record.value(), DebeziumEnvelope::class.java) } returns envelope
 
         // When
-        listener.onArticleEvent(record)
+        listener.onArticleEvents(listOf(record))
 
         // Then
         coVerify(exactly = 0) { articleAnalysisService.analyze(any()) }
@@ -80,7 +78,7 @@ class ArticleEventListenerTest {
         every { objectMapper.readValue(record.value(), DebeziumEnvelope::class.java) } returns envelope
 
         // When
-        listener.onArticleEvent(record)
+        listener.onArticleEvents(listOf(record))
 
         // Then
         coVerify(exactly = 0) { articleAnalysisService.analyze(any()) }
@@ -95,15 +93,15 @@ class ArticleEventListenerTest {
         every { objectMapper.readValue(record.value(), DebeziumEnvelope::class.java) } returns envelope
 
         // When
-        listener.onArticleEvent(record)
+        listener.onArticleEvents(listOf(record))
 
         // Then
         coVerify(exactly = 0) { articleAnalysisService.analyze(any()) }
     }
 
     @Test
-    @DisplayName("JSON 역직렬화 실패 시 예외가 전파된다")
-    fun onDeserializationFailure_throwsException() {
+    @DisplayName("JSON 역직렬화 실패 시 해당 레코드만 실패하고 예외가 전파되지 않는다")
+    fun onDeserializationFailure_doesNotThrow() {
         // Given
         val record = ConsumerRecord<String, String>("article-events", 0, 0L, null, "invalid-json")
         every {
@@ -111,7 +109,7 @@ class ArticleEventListenerTest {
         } throws com.fasterxml.jackson.core.JsonParseException(null, "Unexpected character")
 
         // When & Then
-        assertThatThrownBy { listener.onArticleEvent(record) }
-            .isInstanceOf(com.fasterxml.jackson.core.JsonParseException::class.java)
+        assertThatCode { listener.onArticleEvents(listOf(record)) }
+            .doesNotThrowAnyException()
     }
 }

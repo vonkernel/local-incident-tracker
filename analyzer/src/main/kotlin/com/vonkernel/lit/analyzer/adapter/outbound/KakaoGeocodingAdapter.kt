@@ -30,22 +30,16 @@ class KakaoGeocodingAdapter(
     private val log = LoggerFactory.getLogger(javaClass)
 
     override suspend fun geocodeByAddress(query: String): List<Location> =
-        findCached(query)?.let { listOf(it) } ?: runCatching {
-            searchAddress(query)?.let { mapToLocations(it, query) } ?: emptyList()
-        }.onFailure {
-            log.warn("Kakao address search failed for query='{}': {}", query, it.message)
-        }.getOrDefault(emptyList())
+        findCached(query)?.let { listOf(it) }
+            ?: (searchAddress(query)?.let { mapToLocations(it, query) } ?: emptyList())
 
     override suspend fun geocodeByKeyword(query: String): List<Location> =
-        findCached(query)?.let { listOf(it) } ?: runCatching {
-            searchKeyword(query)?.let { keywordDoc ->
+        findCached(query)?.let { listOf(it) }
+            ?: (searchKeyword(query)?.let { keywordDoc ->
                 searchAddress(keywordDoc.addressName)
                     ?.let { mapToLocations(it, query) }
                     ?: listOf(locationFromCoordinate(keywordDoc, query))
-            } ?: emptyList()
-        }.onFailure {
-            log.warn("Kakao keyword search failed for query='{}': {}", query, it.message)
-        }.getOrDefault(emptyList())
+            } ?: emptyList())
 
     private suspend fun findCached(query: String): Location? =
         withContext(Dispatchers.IO) {
@@ -84,11 +78,10 @@ class KakaoGeocodingAdapter(
         val coordinate = Coordinate(lat = document.y.toDouble(), lon = document.x.toDouble())
 
         return buildList {
-            if (addr.bCode.isNotBlank()) {
-                add(buildLocation(coordinate, RegionType.BJDONG, addr.bCode, originalName, addr, addr.region3DepthName))
-            }
             if (addr.hCode.isNotBlank()) {
                 add(buildLocation(coordinate, RegionType.HADONG, addr.hCode, originalName, addr, addr.region3DepthHName))
+            } else if (addr.bCode.isNotBlank()) {
+                add(buildLocation(coordinate, RegionType.BJDONG, addr.bCode, originalName, addr, addr.region3DepthName))
             }
             if (isEmpty()) {
                 add(locationFromCoordinate(document, originalName))

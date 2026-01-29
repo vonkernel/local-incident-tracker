@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.vonkernel.lit.analyzer.adapter.inbound.model.DebeziumEnvelope
 import com.vonkernel.lit.analyzer.adapter.inbound.model.toArticle
 import com.vonkernel.lit.analyzer.domain.service.ArticleAnalysisService
+import com.vonkernel.lit.core.util.executeWithRetry
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
@@ -26,11 +30,27 @@ class ArticleEventListener(
         topics = ["\${kafka.topic.article-events}"],
         groupId = "\${kafka.consumer.group-id}"
     )
-    fun onArticleEvent(record: ConsumerRecord<String, String>) {
-        runCatching { objectMapper.readValue(record.value(), DebeziumEnvelope::class.java) }
-            .map { envelope -> envelope.takeIf { it.op in CREATE_OPS } }
-            .mapCatching { envelope ->
-                envelope
+    fun onArticleEvents(records: List<ConsumerRecord<String, String>>) {
+        log.info("Received batch of {} records", records.size)
+        runBlocking {
+            supervisorScope {
+                records
+                    .map { record -> async { processRecord(record) } }
+                    .awaitAll()
+            }
+        }
+    }
+
+    private suspend fun processRecord(record: ConsumerRecord<String, String>) {
+        runCatching {
+            executeWithRetry(maxRetries = 1, onRetry = { attempt, delay, e ->
+                log.warn("Retrying record processing (attempt {}, offset={}, delay {}ms): {}",
+                    attempt, record.offset(), delay, e.message)
+            }) {
+                val envelope = objectMapper.readValue(record.value(), DebeziumEnvelope::class.java)
+                    .takeIf { it.op in CREATE_OPS }
+
+                val article = envelope
                     ?.after
                     ?.toArticle()
                     ?.also { log.info("Received article CDC event: articleId={}", it.articleId) }
@@ -42,13 +62,11 @@ class ArticleEventListener(
                         }
                         null
                     }
+
+                article?.let { articleAnalysisService.analyze(it) }
             }
-            .mapCatching { article ->
-                article?.let { runBlocking { articleAnalysisService.analyze(it) } }
-            }
-            .onFailure { e ->
-                log.error("Failed to process article event at offset={}: {}", record.offset(), e.message, e)
-                throw e
-            }
+        }.onFailure { e ->
+            log.error("Failed to process article event at offset={}: {}", record.offset(), e.message, e)
+        }
     }
 }
