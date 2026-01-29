@@ -39,10 +39,17 @@ Debezium CDC → Kafka (analysis-events)
 | `ArticleEventListener` | Kafka consumer that receives Debezium CDC envelopes, deserializes them into `Article` domain objects, and delegates to the application service | `article-events` Kafka topic |
 
 The listener is responsible for:
-- Deserializing Debezium CDC envelope format into the `Article` shared domain model
-- Handling consumer group offset management and acknowledgment
+- Deserializing Debezium CDC envelope (`DebeziumEnvelope`) via Jackson `ObjectMapper`
+- Filtering to only `op: "c"` (create) events — articles are never updated, only inserted
+- Converting `ArticlePayload` to `Article` domain model via `toArticle()` extension function
+- Bridging Kafka's blocking consumer to suspend functions via `runBlocking`
 - Delegating to `ArticleAnalysisService` for actual analysis orchestration
 - Error handling at the message consumption boundary (e.g., deserialization failures, poison messages)
+
+**CDC Event Model** (`DebeziumArticleEvent.kt`):
+- `DebeziumEnvelope`: Contains `before`, `after` (ArticlePayload), `op` (c/u/d/r), `source`
+- `ArticlePayload`: Maps snake_case CDC columns via `@JsonProperty` to Kotlin fields
+- `toArticle()`: Extension function converting payload timestamps (ISO strings) to `Instant`
 
 ### Domain Core
 
@@ -52,7 +59,7 @@ The listener is responsible for:
 | `IncidentTypeAnalyzer` | Classifies the article into one or more incident types (e.g., "forest_fire", "typhoon") using LLM prompt execution. Returns `Set<IncidentType>` |
 | `UrgencyAnalyzer` | Assesses the urgency/severity level of the incident using LLM. Returns `Urgency` with name and numeric level |
 | `KeywordAnalyzer` | Extracts prioritized keywords from the article content using LLM. Returns `List<Keyword>` with keyword text and priority ranking |
-| `LocationAnalyzer` | Extracts geographic location mentions from article text using LLM. Each extracted location is classified as `ADDRESS`, `LANDMARK`, or `UNRESOLVABLE`. Based on the classification, resolves each location to coordinates and structured addresses via the geocoding port (see `KAKAO_API.md` for details). Returns `List<Location>` |
+| `LocationAnalyzer` | Extracts geographic location mentions from article text using LLM. Each extracted location is classified as `ADDRESS`, `LANDMARK`, or `UNRESOLVABLE`. Based on the classification, resolves each location to coordinates and structured addresses via the geocoding port (see `GEOCODING_API.md` for details). Returns `List<Location>` |
 
 ### Outbound Ports (Driven Side)
 
@@ -60,7 +67,7 @@ The listener is responsible for:
 |------|---------------|---------|
 | `AnalysisResultRepository` | persistence module adapter | Atomically persists AnalysisResult + outbox record in a single transaction |
 | `PromptOrchestrator` | ai-core module service | Executes LLM prompts with template variable substitution and JSON response deserialization |
-| `GeocodingPort` | Kakao API adapter (TBD) | Converts place name strings to `Location` domain objects with coordinates and addresses |
+| `GeocodingPort` | `KakaoGeocodingAdapter` | Converts place name strings to `Location` domain objects with coordinates and addresses via Kakao Local API. Includes DB-level address caching via `JpaAddressRepository.findByAddressName()` |
 
 ---
 
@@ -78,7 +85,7 @@ The listener is responsible for:
 └─────────────────────────┬───────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
-│ APPLICATION LAYER                                        │
+│ DOMAIN SERVICE LAYER                                     │
 │                                                          │
 │  ArticleAnalysisService (@Service)                       │
 │  - Entry point for analysis orchestration                │
@@ -135,8 +142,9 @@ The listener is responsible for:
 │  - LLM prompt execution with template variables          │
 │  - JSON response deserialization to typed outputs         │
 │                                                          │
-│  GeocodingAdapter (TBD - Kakao API)                      │
-│  - WebClient-based REST API calls                        │
+│  KakaoGeocodingAdapter (@Component)                      │
+│  - Spring WebClient-based REST API calls to Kakao        │
+│  - DB cache lookup via JpaAddressRepository              │
 │  - Response mapping to Location domain model             │
 │                                                          │
 │  AnalysisResultRepository (persistence module)           │
@@ -154,24 +162,31 @@ The listener is responsible for:
 com.vonkernel.lit.analyzer
 ├── adapter
 │   ├── inbound
-│   │   └── ArticleEventListener.kt       # Kafka consumer for article CDC events
+│   │   ├── ArticleEventListener.kt               # Kafka consumer for article CDC events
+│   │   └── model
+│   │       └── DebeziumArticleEvent.kt            # CDC envelope, payload, Article conversion
 │   └── outbound
-│       └── KakaoGeocodingAdapter.kt       # GeocodingPort implementation (Kakao REST API)
-│
-├── application
-│   └── ArticleAnalysisService.kt          # Analysis orchestration service
+│       ├── KakaoGeocodingAdapter.kt               # GeocodingPort implementation (Kakao REST API)
+│       ├── config
+│       │   └── KakaoWebClientConfig.kt            # WebClient bean with Kakao API auth
+│       └── model
+│           ├── KakaoAddressResponse.kt            # 주소 검색 API 응답 모델
+│           ├── KakaoKeywordResponse.kt            # 키워드 검색 API 응답 모델
+│           └── KakaoMeta.kt                       # 공통 meta 객체
 │
 ├── domain
+│   ├── service
+│   │   └── ArticleAnalysisService.kt              # Analysis orchestration service
 │   ├── analyzer
-│   │   ├── IncidentTypeAnalyzer.kt        # Incident type classification (LLM)
-│   │   ├── UrgencyAnalyzer.kt             # Urgency assessment (LLM)
-│   │   ├── KeywordAnalyzer.kt             # Keyword extraction (LLM)
-│   │   └── LocationAnalyzer.kt            # Location extraction (LLM) + geocoding delegation
+│   │   ├── IncidentTypeAnalyzer.kt                # Incident type classification (LLM)
+│   │   ├── UrgencyAnalyzer.kt                     # Urgency assessment (LLM)
+│   │   ├── KeywordAnalyzer.kt                     # Keyword extraction (LLM)
+│   │   └── LocationAnalyzer.kt                    # Location extraction (LLM)
 │   │
 │   └── port
-│       └── GeocodingPort.kt               # Outbound port for geocoding external API
+│       └── GeocodingPort.kt                       # Outbound port for geocoding external API
 │
-└── AnalyzerApplication.kt                 # Spring Boot entry point
+└── AnalyzerApplication.kt                         # Spring Boot entry point
 ```
 
 ---
@@ -326,6 +341,8 @@ The analyzer depends on `AnalysisResultRepository` defined in the shared module 
 ```kotlin
 interface AnalysisResultRepository {
     fun save(analysisResult: AnalysisResult): AnalysisResult
+    fun existsByArticleId(articleId: String): Boolean
+    fun deleteByArticleId(articleId: String)
 }
 ```
 
@@ -340,7 +357,7 @@ The analyzer does **not** manage transactions directly — it passes a fully con
 ### Geocoding API (Kakao Local API)
 
 The geocoding port provides two methods corresponding to the two Kakao Local API endpoints.
-See `KAKAO_API.md` for full API specification, response examples, and domain model mapping.
+See `GEOCODING_API.md` for full API specification, response examples, and domain model mapping.
 
 ```kotlin
 interface GeocodingPort {
@@ -359,7 +376,12 @@ interface GeocodingPort {
 - **LANDMARK**: `geocodeByKeyword()` → extract `address_name` → `geocodeByAddress()` → fallback direct coordinate use
 - **UNRESOLVABLE**: No API call. Store `addressName` only with `coordinate = null`
 
-The adapter implementation (`KakaoGeocodingAdapter`) uses Spring WebClient to call the Kakao REST API.
+The adapter implementation (`KakaoGeocodingAdapter`) uses Spring WebClient (configured via `KakaoWebClientConfig` with `KakaoAK` authorization header) to call the Kakao REST API.
+
+**DB Cache Layer**: Before making API calls, the adapter checks `JpaAddressRepository.findByAddressName(query)` for a previously resolved address. Cache hits skip the API call entirely and return the stored `Location` via `LocationMapper.toDomainModel()`.
+
+**Parallel Geocoding**: `ArticleAnalysisService` resolves all extracted locations concurrently via `coroutineScope { extractedLocations.map { async { resolveLocation(it) } }.awaitAll() }`. Each location is resolved independently based on its `LocationType`.
+
 `Address.addressName` always stores the LLM-extracted original expression, not the Kakao API response address.
 
 ---
@@ -370,7 +392,7 @@ The adapter implementation (`KakaoGeocodingAdapter`) uses Spring WebClient to ca
 The analyzer communicates with other services exclusively through events. It consumes Article events from Kafka and produces AnalysisResult records that are published via CDC. There are no direct HTTP calls to collector, indexer, or searcher.
 
 ### Idempotency
-The same Article CDC event may be delivered more than once (at-least-once delivery). The analyzer must handle duplicate events gracefully — either by checking for existing analysis results before processing or by allowing safe re-processing that overwrites previous results.
+The same Article CDC event may be delivered more than once (at-least-once delivery). The analyzer handles duplicate events by checking for existing analysis results via `AnalysisResultRepository.existsByArticleId()` before processing. If a prior result exists, it is deleted via `deleteByArticleId()` and the article is re-analyzed from scratch. This "delete-then-reinsert" strategy ensures idempotent processing while allowing analysis improvements on redelivery.
 
 ### Transactional Atomicity
 All analysis results for a single article must be committed atomically. The persistence module ensures that the AnalysisResult entity and the outbox record are written in a single transaction. If any part fails, the entire operation rolls back.

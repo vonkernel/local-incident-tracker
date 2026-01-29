@@ -309,30 +309,52 @@ Location(
 
 ### 실제 뉴스 기사 예시
 
-| 기사 문장 | LLM 추출 | 유형 | API 호출 | DB 저장 결과 |
-|----------|----------|------|----------|-------------|
-| "하남시 선동에서 어젯밤 정전이 발생했습니다" | "하남시 선동" | `ADDRESS` | 주소 검색 | `addressName`="하남시 선동", `depth1Name`="경기", `depth2Name`="하남시", `depth3Name`="선동", `code`=법정동코드, `coordinate`=(위도, 경도) |
-| "판교JC에서 13중 추돌이 발생하였습니다" | "판교JC" | `LANDMARK` | 키워드 검색 → 주소 검색 | `addressName`="판교JC", `depth1Name`="경기", `depth2Name`="성남시 분당구", ..., `coordinate`=(위도, 경도) |
-| "전국에 호우주의보가 발령되었습니다" | "전국" | `UNRESOLVABLE` | 없음 | `addressName`="전국", `depth1~3Name`=null, `code`="UNKNOWN", `coordinate`=null |
-| "어제 새벽 코엑스에서 싱크홀이 발생하였습니다" | "코엑스" | `LANDMARK` | 키워드 검색 → 주소 검색 | `addressName`="코엑스", `depth1Name`="서울", `depth2Name`="강남구", `depth3Name`="삼성동", `code`=법정동코드, `coordinate`=(위도, 경도) |
-| "전북 지역엔 오늘 황사가 심하겠습니다" | "전북" | `ADDRESS` | 주소 검색 | `addressName`="전북", `depth1Name`="전북특별자치도", `depth2Name`=null, `depth3Name`=null, `code`=법정동코드, `coordinate`=(위도, 경도) |
+| 기사 문장 | LLM 추출 | 유형 | API 호출 | DB 저장 결과 (Location 수) |
+|----------|----------|------|----------|--------------------------|
+| "하남시 선동에서 어젯밤 정전이 발생했습니다" | "하남시 선동" | `ADDRESS` | 주소 검색 | **2개**: BJDONG(`code`=법정동코드, `depth3Name`="선동") + HADONG(`code`=행정동코드, `depth3Name`="선동") |
+| "판교JC에서 13중 추돌이 발생하였습니다" | "판교JC" | `LANDMARK` | 키워드 → 주소 검색 | **2개**: BJDONG + HADONG (depth3에서 분리, 좌표 공유) |
+| "전국에 호우주의보가 발령되었습니다" | "전국" | `UNRESOLVABLE` | 없음 | **1개**: `code`="UNKNOWN", `regionType`=UNKNOWN, `coordinate`=null |
+| "코엑스에서 싱크홀이 발생하였습니다" | "코엑스" | `LANDMARK` | 키워드 → 주소 검색 | **2개**: BJDONG(`depth3Name`="삼성동") + HADONG(`depth3Name`="삼성1동") |
+| "전북 지역엔 오늘 황사가 심하겠습니다" | "전북" | `ADDRESS` | 주소 검색 | **2개**: BJDONG + HADONG (depth3Name 모두 null, depth1="전북특별자치도") |
 
 ### 도메인 모델 매핑
 
 주소 검색 API 응답을 shared 모듈의 `Location` 도메인 모델로 변환한다.
+하나의 API 응답에서 **법정동(BJDONG)과 행정동(HADONG)이 동시에 존재**할 수 있으며, 이 경우 **2개의 `Location` 객체**가 생성된다.
+
+#### 법정동 / 행정동 분리 규칙
+
+Kakao 주소 API 응답의 `address` 객체에는 `b_code`(법정동 코드)와 `h_code`(행정동 코드)가 함께 포함될 수 있다.
+법정동과 행정동은 대체로 `depth3`(읍/면/동) 수준에서 갈리며, `depth1`(시/도)과 `depth2`(시/군/구)는 공유된다.
 
 ```
-Kakao 주소 검색 API 응답              →  도메인 모델
+Kakao address 객체 필드               →  분리 기준
 ──────────────────────────────────────────────────────
-documents[].y (위도)                  →  Coordinate.lat
-documents[].x (경도)                  →  Coordinate.lon
-address.b_code (법정동 코드)           →  Address.code (RegionType.BJDONG)
-address.h_code (행정동 코드)           →  Address.code (RegionType.HADONG)
-LLM이 추출한 원본 표현                →  Address.addressName
-address.region_1depth_name            →  Address.depth1Name
-address.region_2depth_name            →  Address.depth2Name
-address.region_3depth_name            →  Address.depth3Name
+b_code (법정동 코드)                   → 존재 시 BJDONG Location 생성
+  + region_3depth_name (법정동명)      →   Address.depth3Name
+  + region_1depth_name                →   Address.depth1Name (공유)
+  + region_2depth_name                →   Address.depth2Name (공유)
+
+h_code (행정동 코드)                   → 존재 시 HADONG Location 생성
+  + region_3depth_h_name (행정동명)    →   Address.depth3Name
+  + region_1depth_name                →   Address.depth1Name (공유)
+  + region_2depth_name                →   Address.depth2Name (공유)
+
+documents[].y (위도)                   →  Coordinate.lat (공유)
+documents[].x (경도)                   →  Coordinate.lon (공유)
+LLM이 추출한 원본 표현                 →  Address.addressName (공유)
 ```
+
+#### 매핑 예시
+
+"하남시 선동" 주소 검색 시 API 응답에 `b_code="4145010200"`, `h_code="4145069000"` 가 모두 존재하면:
+
+| # | RegionType | code | depth3Name | addressName |
+|---|------------|------|------------|-------------|
+| 1 | BJDONG | 4145010200 | 선동 (region_3depth_name) | 하남시 선동 |
+| 2 | HADONG | 4145069000 | 선동 (region_3depth_h_name) | 하남시 선동 |
+
+"전북" 주소 검색 시 depth3 자체가 없지만, `b_code`와 `h_code` 모두 존재하면 2개의 Location이 생성된다 (depth3Name은 둘 다 null).
 
 **주의**: `Address.addressName`에는 Kakao API가 반환한 주소가 아니라, **LLM이 뉴스 기사에서 추출한 원본 표현**이 저장된다 (예: "하남시 선동", "판교JC", "코엑스", "전국").
 
