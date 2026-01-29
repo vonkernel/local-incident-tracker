@@ -31,6 +31,17 @@ class AnalysisResultRepositoryAdapter(
     private val outboxMapper: AnalysisResultOutboxMapper
 ) : AnalysisResultRepository {
 
+    @Transactional(readOnly = true)
+    override fun existsByArticleId(articleId: String): Boolean =
+        jpaAnalysisResultRepository.findByArticleId(articleId) != null
+
+    @Transactional
+    override fun deleteByArticleId(articleId: String) {
+        jpaAnalysisResultRepository.findByArticleId(articleId)?.let {
+            jpaAnalysisResultRepository.delete(it)
+        }
+    }
+
     @Transactional
     override fun save(analysisResult: AnalysisResult): AnalysisResult =
         buildAnalysisResultEntity(analysisResult)
