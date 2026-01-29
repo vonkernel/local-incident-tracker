@@ -9,7 +9,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 
     // Kafka for event consumption
-    implementation("org.springframework.kafka:spring-kafka:3.3.11")
+    implementation("org.springframework.boot:spring-boot-starter-kafka")
 
     // Database
     runtimeOnly("org.postgresql:postgresql:42.7.9")

@@ -22,8 +22,11 @@ spring:
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP_ID:analyzer-group}
       auto-offset-reset: earliest
+      enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: batch
 
 server:
   port: 8082
