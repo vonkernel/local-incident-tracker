@@ -10,7 +10,6 @@ template: |
 
   아래 목록에서만 선택하세요. 목록에 없는 유형은 사용하지 마세요.
 
-  - $code: $name
   {{incidentTypeList}}
 
   ## 분류 기준
@@ -27,10 +26,10 @@ template: |
 
   ## 응답 형식
 
-  반드시 아래 JSON 형식으로만 응답하세요.
+  반드시 아래 JSON 형식으로만 응답하세요. code와 name은 위 목록의 값을 그대로 사용하세요. (예: "FIRE", "화재")
   {
     "incidentTypes": [
-      { "code": "사건유형코드", "name": "사건유형명" }
+      { "code": "코드만 입력", "name": "유형명만 입력" }
     ]
   }
 

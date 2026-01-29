@@ -18,5 +18,5 @@ class DefaultLocationAnalyzer(
             input = LocationExtractionInput(title = article.title, content = article.content),
             inputType = LocationExtractionInput::class.java,
             outputType = LocationExtractionOutput::class.java
-        ).result.locations
+        ).result.location.let(::listOf)
 }

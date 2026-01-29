@@ -9,7 +9,6 @@ template: |
 
   아래 목록에서만 선택하세요. 목록에 없는 수준은 사용하지 마세요.
 
-  - $name (level: $level)
   {{urgencyTypeList}}
 
   ## 판단 지침
@@ -26,11 +25,11 @@ template: |
 
   ## 응답 형식
 
-  반드시 아래 JSON 형식으로만 응답하세요.
+  반드시 아래 JSON 형식으로만 응답하세요. name에는 긴급도 이름만 입력하세요. (예: "경계")
   {
     "urgency": {
-      "name": "긴급도명",
-      "level": 긴급도레벨(숫자)
+      "name": "긴급도 이름만 입력 (level 제외)",
+      "level": 해당_긴급도의_level_숫자
     }
   }
 
