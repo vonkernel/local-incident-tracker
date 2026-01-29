@@ -18,33 +18,37 @@ class ArticleEventListener(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        private val CREATE_OPS = setOf("c", "r")
+    }
+
     @KafkaListener(
         topics = ["\${kafka.topic.article-events}"],
         groupId = "\${kafka.consumer.group-id}"
     )
     fun onArticleEvent(record: ConsumerRecord<String, String>) {
-        try {
-            val envelope = objectMapper.readValue(record.value(), DebeziumEnvelope::class.java)
-
-            if (envelope.op != "c" && envelope.op != "r") {
-                log.debug("Ignoring non-create CDC event: op={}", envelope.op)
-                return
+        runCatching { objectMapper.readValue(record.value(), DebeziumEnvelope::class.java) }
+            .map { envelope -> envelope.takeIf { it.op in CREATE_OPS } }
+            .mapCatching { envelope ->
+                envelope
+                    ?.after
+                    ?.toArticle()
+                    ?.also { log.info("Received article CDC event: articleId={}", it.articleId) }
+                    ?: run {
+                        if (envelope != null) {
+                            log.warn("Received create event with null 'after' payload, offset={}", record.offset())
+                        } else {
+                            log.debug("Ignoring non-create CDC event, offset={}", record.offset())
+                        }
+                        null
+                    }
             }
-
-            val article = envelope.after?.toArticle()
-            if (article == null) {
-                log.warn("Received create event with null 'after' payload, offset={}", record.offset())
-                return
+            .mapCatching { article ->
+                article?.let { runBlocking { articleAnalysisService.analyze(it) } }
             }
-
-            log.info("Received article CDC event: articleId={}", article.articleId)
-
-            runBlocking {
-                articleAnalysisService.analyze(article)
+            .onFailure { e ->
+                log.error("Failed to process article event at offset={}: {}", record.offset(), e.message, e)
+                throw e
             }
-        } catch (e: Exception) {
-            log.error("Failed to process article event at offset={}: {}", record.offset(), e.message, e)
-            throw e
-        }
     }
 }

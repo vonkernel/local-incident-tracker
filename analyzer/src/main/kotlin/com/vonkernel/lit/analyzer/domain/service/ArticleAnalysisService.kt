@@ -33,37 +33,44 @@ class ArticleAnalysisService(
     suspend fun analyze(article: Article) {
         log.info("Starting analysis for article: {}", article.articleId)
 
-        if (analysisResultRepository.existsByArticleId(article.articleId)) {
-            log.info("Existing analysis found for article: {}, deleting before re-analysis", article.articleId)
-            analysisResultRepository.deleteByArticleId(article.articleId)
-        }
+        ensureNoExistingAnalysis(article.articleId)
 
-        val analysisResult = coroutineScope {
-            val incidentTypes = async { incidentTypeAnalyzer.analyze(article) }
-            val urgency = async { urgencyAnalyzer.analyze(article) }
-            val keywords = async { keywordAnalyzer.analyze(article) }
-            val extractedLocations = async { locationAnalyzer.analyze(article) }
+        analyzeArticle(article)
+            .let { analysisResultRepository.save(it) }
 
-            val locations = resolveLocations(extractedLocations.await())
-
-            AnalysisResult(
-                articleId = article.articleId,
-                incidentTypes = incidentTypes.await(),
-                urgency = urgency.await(),
-                keywords = keywords.await().keywords,
-                locations = locations
-            )
-        }
-
-        analysisResultRepository.save(analysisResult)
         log.info("Analysis completed and saved for article: {}", article.articleId)
+    }
+
+    private fun ensureNoExistingAnalysis(articleId: String) {
+        if (analysisResultRepository.existsByArticleId(articleId)) {
+            log.info("Existing analysis found for article: {}, deleting before re-analysis", articleId)
+            analysisResultRepository.deleteByArticleId(articleId)
+        }
+    }
+
+    private suspend fun analyzeArticle(article: Article): AnalysisResult = coroutineScope {
+        val incidentTypes = async { incidentTypeAnalyzer.analyze(article) }
+        val urgency = async { urgencyAnalyzer.analyze(article) }
+        val keywords = async { keywordAnalyzer.analyze(article) }
+        val locations = async { locationAnalyzer.analyze(article) }
+            .await()
+            .let { resolveLocations(it) }
+
+        AnalysisResult(
+            articleId = article.articleId,
+            incidentTypes = incidentTypes.await(),
+            urgency = urgency.await(),
+            keywords = keywords.await().keywords,
+            locations = locations
+        )
     }
 
     private suspend fun resolveLocations(extractedLocations: List<ExtractedLocation>): List<Location> =
         coroutineScope {
-            extractedLocations.map { extracted ->
-                async { resolveLocation(extracted) }
-            }.awaitAll().flatten()
+            extractedLocations
+                .map { async { resolveLocation(it) } }
+                .awaitAll()
+                .flatten()
         }
 
     private suspend fun resolveLocation(extracted: ExtractedLocation): List<Location> =
