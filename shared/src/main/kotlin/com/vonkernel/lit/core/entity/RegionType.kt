@@ -1,4 +1,4 @@
-package com.vonkernel.lit.entity
+package com.vonkernel.lit.core.entity
 
 enum class RegionType(val code: String) {
     BJDONG("B"),           // 법정동 (Judicial-dong)

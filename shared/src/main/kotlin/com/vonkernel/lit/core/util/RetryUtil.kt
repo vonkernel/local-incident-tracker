@@ -1,6 +1,6 @@
-package com.vonkernel.lit.util
+package com.vonkernel.lit.core.util
 
-import com.vonkernel.lit.exception.MaxRetriesExceededException
+import com.vonkernel.lit.core.exception.MaxRetriesExceededException
 import kotlinx.coroutines.delay
 import kotlin.math.pow
 

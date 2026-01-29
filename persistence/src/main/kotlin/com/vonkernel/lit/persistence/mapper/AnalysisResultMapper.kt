@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.persistence.entity.analysis.AnalysisResultEntity
 
 object AnalysisResultMapper {

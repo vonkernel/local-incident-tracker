@@ -1,4 +1,4 @@
-package com.vonkernel.lit.entity
+package com.vonkernel.lit.core.entity
 
 /**
  * OpenSearch geo-point 형식에 맞춘 지리 좌표

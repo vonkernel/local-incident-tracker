@@ -1,6 +1,6 @@
-package com.vonkernel.lit.repository
+package com.vonkernel.lit.core.repository
 
-import com.vonkernel.lit.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.AnalysisResult
 
 interface AnalysisResultRepository {
     fun save(analysisResult: AnalysisResult): AnalysisResult

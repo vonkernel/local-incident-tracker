@@ -211,7 +211,7 @@ class AnalysisResultRepositoryAdapterTest {
         val saved = adapter.save(analysisResult)
 
         // Then: 도메인 모델 타입 확인
-        assertThat(saved).isInstanceOf(com.vonkernel.lit.entity.AnalysisResult::class.java)
+        assertThat(saved).isInstanceOf(com.vonkernel.lit.core.entity.AnalysisResult::class.java)
 
         // Then: 모든 필드가 정확히 매핑됨
         assertThat(saved.articleId).isEqualTo(analysisResult.articleId)

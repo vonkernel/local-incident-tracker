@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.Coordinate
+import com.vonkernel.lit.core.entity.Coordinate
 import com.vonkernel.lit.persistence.entity.analysis.AddressCoordinateEntity
 
 object CoordinateMapper {

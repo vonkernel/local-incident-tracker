@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.Keyword
+import com.vonkernel.lit.core.entity.Keyword
 import com.vonkernel.lit.persistence.entity.analysis.ArticleKeywordEntity
 
 object KeywordMapper {

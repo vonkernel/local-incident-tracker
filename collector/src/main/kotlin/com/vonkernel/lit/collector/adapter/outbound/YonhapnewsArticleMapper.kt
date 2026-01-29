@@ -1,6 +1,6 @@
 package com.vonkernel.lit.collector.adapter.outbound
 
-import com.vonkernel.lit.entity.Article
+import com.vonkernel.lit.core.entity.Article
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId

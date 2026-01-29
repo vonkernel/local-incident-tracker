@@ -1,4 +1,4 @@
-package com.vonkernel.lit.entity
+package com.vonkernel.lit.core.entity
 
 import java.time.Instant
 

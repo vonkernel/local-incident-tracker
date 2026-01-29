@@ -1,4 +1,4 @@
-package com.vonkernel.lit.entity
+package com.vonkernel.lit.core.entity
 
 /**
  * 분석된 키워드와 그 중요도를 나타내는 데이터 클래스

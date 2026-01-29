@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.adapter
 
-import com.vonkernel.lit.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.persistence.entity.analysis.AddressEntity
 import com.vonkernel.lit.persistence.entity.analysis.AddressMappingEntity
 import com.vonkernel.lit.persistence.entity.analysis.AnalysisResultEntity
@@ -17,7 +17,7 @@ import com.vonkernel.lit.persistence.mapper.AnalysisResultMapper
 import com.vonkernel.lit.persistence.mapper.AnalysisResultOutboxMapper
 import com.vonkernel.lit.persistence.mapper.KeywordMapper
 import com.vonkernel.lit.persistence.mapper.LocationMapper
-import com.vonkernel.lit.repository.AnalysisResultRepository
+import com.vonkernel.lit.core.repository.AnalysisResultRepository
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 

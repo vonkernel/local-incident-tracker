@@ -1,6 +1,6 @@
-package com.vonkernel.lit.repository
+package com.vonkernel.lit.core.repository
 
-import com.vonkernel.lit.entity.Article
+import com.vonkernel.lit.core.entity.Article
 
 interface ArticleRepository {
     fun save(article: Article): Article

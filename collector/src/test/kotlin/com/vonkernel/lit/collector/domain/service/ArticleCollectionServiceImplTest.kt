@@ -3,8 +3,8 @@ package com.vonkernel.lit.collector.domain.service
 import com.vonkernel.lit.collector.domain.exception.CollectionException
 import com.vonkernel.lit.collector.domain.model.ArticlePage
 import com.vonkernel.lit.collector.domain.port.NewsApiPort
-import com.vonkernel.lit.entity.Article
-import com.vonkernel.lit.repository.ArticleRepository
+import com.vonkernel.lit.core.entity.Article
+import com.vonkernel.lit.core.repository.ArticleRepository
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach

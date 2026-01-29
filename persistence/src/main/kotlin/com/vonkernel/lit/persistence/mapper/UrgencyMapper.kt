@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.Urgency
+import com.vonkernel.lit.core.entity.Urgency
 import com.vonkernel.lit.persistence.entity.core.UrgencyTypeEntity
 
 object UrgencyMapper {

@@ -1,4 +1,4 @@
-package com.vonkernel.lit.exception
+package com.vonkernel.lit.core.exception
 
 class MaxRetriesExceededException(
     message: String,
