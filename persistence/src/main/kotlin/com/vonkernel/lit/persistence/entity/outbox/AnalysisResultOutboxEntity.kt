@@ -6,6 +6,8 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import java.time.ZonedDateTime
 
 @Entity
@@ -19,6 +21,7 @@ class AnalysisResultOutboxEntity(
     @Column(name = "article_id", length = 255, nullable = false, unique = true)
     var articleId: String,
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "payload", nullable = false, columnDefinition = "JSONB")
     var payload: String,
 
