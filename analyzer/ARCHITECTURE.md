@@ -19,7 +19,9 @@ Kafka (article-events)
         ├─ Urgency assessment (title + content) → Urgency
         ├─ Keyword extraction (summary) → List<Keyword>
         ├─ Topic extraction (summary) → Topic
-        └─ Location extraction (title + content) → List<String> (place names)
+        └─ LocationAnalysisService (title + content)
+            ├─ Location extraction (LLM) → List<ExtractedLocation>
+            ├─ Location validation (LLM) → List<ExtractedLocation> (filtered/normalized/refined)
             └─ Geocoding (External API) → List<Location>
     ↓
 [AnalysisResult assembly]
@@ -58,13 +60,15 @@ The listener is responsible for:
 
 | Component | Responsibility |
 |-----------|---------------|
-| `ArticleAnalysisService` | Top-level orchestration: receives an `Article`, runs 2-phase pipeline (refine → parallel analysis), assembles the final `AnalysisResult`, and delegates persistence |
+| `ArticleAnalysisService` | Top-level orchestration: receives an `Article`, runs 2-phase pipeline (refine → parallel analysis), assembles the final `AnalysisResult`, and delegates persistence. Wraps failures in `ArticleAnalysisException` with `articleId` for traceability |
 | `RefineArticleAnalyzer` | Phase 1: Refines raw article by removing noise (journalist info, newlines, "끝" markers), restructuring content as individual fact sentences, and generating a 3-sentence summary. Returns `RefinedArticle` |
 | `IncidentTypeAnalyzer` | Classifies the refined article into one or more incident types (e.g., "forest_fire", "typhoon") using LLM prompt execution. Returns `Set<IncidentType>` |
 | `UrgencyAnalyzer` | Assesses the urgency/severity level of the incident from the refined article using LLM. Returns `Urgency` with name and numeric level |
 | `KeywordAnalyzer` | Extracts up to 3 prioritized keywords from the refined article summary using LLM. Returns `List<Keyword>` with keyword text and priority ranking |
 | `TopicAnalyzer` | Extracts a single topic sentence from the refined article summary using LLM. Returns `Topic` with a complete sentence (not keyword combination) |
-| `LocationAnalyzer` | Extracts geographic location mentions from the refined article text using LLM. Each extracted location is classified as `ADDRESS` (행정구역 단위만으로 구성된 주소 — 시설명·건물명·도로명 등 비행정 요소 제외), `LANDMARK` (건물명·시설명 등 고유명사 장소 — 행정구역 접두어 유지, 수식어 제거), or `UNRESOLVABLE`. Based on the classification, resolves each location to coordinates and structured addresses via the geocoding port (see `GEOCODING_API.md` for details). Returns `List<Location>` |
+| `LocationAnalysisService` | Orchestrates the 3-step location pipeline: extraction → validation → geocoding. Delegates to `LocationAnalyzer`, `LocationValidator`, and `GeocodingPort`. Returns `List<Location>` |
+| `LocationAnalyzer` | Extracts geographic location mentions from the refined article text using LLM. Each extracted location is classified as `ADDRESS` (행정구역 단위만으로 구성된 주소 — 시설명·건물명·도로명 등 비행정 요소 제외), `LANDMARK` (건물명·시설명 등 고유명사 장소 — 행정구역 접두어 유지, 수식어 제거), or `UNRESOLVABLE`. Returns `List<ExtractedLocation>` |
+| `LocationValidator` | Validates and refines extracted locations via LLM before geocoding: (1) filters out locations not directly related to the incident (reporter attribution, background mentions, institution names), (2) normalizes abbreviated region names to full official names (e.g., 충남→충청남도), (3) cleans up modifier suffixes (인근, 부근, 일대 etc.). Returns `List<ExtractedLocation>` |
 
 ### Outbound Ports (Driven Side)
 
@@ -98,6 +102,13 @@ The listener is responsible for:
 │  - Phase 2: 5 parallel analyzers using refined article   │
 │  - Awaits all results and assembles AnalysisResult       │
 │  - Calls AnalysisResultRepository.save()                 │
+│  - Wraps failures in ArticleAnalysisException            │
+│                                                          │
+│  LocationAnalysisService (@Service)                      │
+│  - Orchestrates location extraction → validation →       │
+│    geocoding pipeline                                    │
+│  - Delegates to LocationAnalyzer, LocationValidator,     │
+│    and GeocodingPort                                     │
 └─────────────────────────┬───────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -134,18 +145,20 @@ The listener is responsible for:
 │  │      input: refined summary                           │
 │  │      output: Topic                                    │
 │  │                                                       │
-│  └─ LocationAnalyzer (Phase 2 - parallel)                │
-│      ├─ Uses PromptOrchestrator.execute()                │
-│      │   promptId: "location-extraction"                 │
-│      │   input: refined title + content                  │
-│      │   output: List<ExtractedLocation>                 │
-│      │     ExtractedLocation: { name, type }             │
-│      │     type: ADDRESS | LANDMARK | UNRESOLVABLE       │
-│      └─ Uses GeocodingPort for each extracted location   │
-│          ADDRESS    → geocodeByAddress(name)             │
-│          LANDMARK   → geocodeByKeyword(name)             │
-│          UNRESOLVABLE → no API call, addressName only    │
-│          output: List<Location>                          │
+│  ├─ LocationAnalyzer (Phase 2 - parallel)                │
+│  │   └─ Uses PromptOrchestrator.execute()                │
+│  │      promptId: "location-extraction"                  │
+│  │      input: refined title + content                   │
+│  │      output: List<ExtractedLocation>                  │
+│  │        ExtractedLocation: { name, type }              │
+│  │        type: ADDRESS | LANDMARK | UNRESOLVABLE        │
+│  │                                                       │
+│  └─ LocationValidator (post-extraction validation)       │
+│      └─ Uses PromptOrchestrator.execute()                │
+│         promptId: "location-validation"                  │
+│         input: title + content + extracted locations     │
+│         output: List<ExtractedLocation> (filtered,       │
+│                 normalized, refined)                      │
 │                                                          │
 │  Port Interfaces                                         │
 │  └─ GeocodingPort                                        │
@@ -194,14 +207,18 @@ com.vonkernel.lit.analyzer
 │
 ├── domain
 │   ├── service
-│   │   └── ArticleAnalysisService.kt              # Analysis orchestration service
+│   │   ├── ArticleAnalysisService.kt              # Analysis orchestration service
+│   │   └── LocationAnalysisService.kt             # Location extraction → validation → geocoding pipeline
 │   ├── analyzer
 │   │   ├── RefineArticleAnalyzer.kt               # Phase 1: Article refinement (LLM)
 │   │   ├── IncidentTypeAnalyzer.kt                # Phase 2: Incident type classification (LLM)
 │   │   ├── UrgencyAnalyzer.kt                     # Phase 2: Urgency assessment (LLM)
 │   │   ├── KeywordAnalyzer.kt                     # Phase 2: Keyword extraction (LLM, summary-based)
 │   │   ├── TopicAnalyzer.kt                       # Phase 2: Topic extraction (LLM, summary-based)
-│   │   └── LocationAnalyzer.kt                    # Phase 2: Location extraction (LLM)
+│   │   ├── LocationAnalyzer.kt                    # Location extraction from article text (LLM)
+│   │   └── LocationValidator.kt                   # Location validation/normalization/refinement (LLM)
+│   ├── exception
+│   │   └── ArticleAnalysisException.kt            # Custom exception with articleId for traceability
 │   │
 │   └── port
 │       └── GeocodingPort.kt                       # Outbound port for geocoding external API
@@ -242,7 +259,7 @@ coroutineScope {
     val urgency       = async { urgencyAnalyzer.analyze(refinedArticle.title, refinedArticle.content) }
     val keywords      = async { keywordAnalyzer.analyze(refinedArticle.summary) }
     val topic         = async { topicAnalyzer.analyze(refinedArticle.summary) }
-    val locations     = async { locationAnalyzer.analyze(refinedArticle.title, refinedArticle.content) }
+    val locations     = async { locationAnalysisService.analyze(articleId, refinedArticle.title, refinedArticle.content) }
 
     AnalysisResult(
         articleId     = article.articleId,
@@ -256,21 +273,28 @@ coroutineScope {
 }
 ```
 
+Any exception during analysis or persistence is caught, logged at ERROR level, and re-thrown as `ArticleAnalysisException(articleId, message, cause)` for upstream handling with article identity preserved.
+
 Each analyzer internally:
 1. Constructs a `PromptRequest` with the appropriate `promptId`, input data, and output type
 2. Calls `PromptOrchestrator.execute()` which loads the prompt template, substitutes `{{variables}}`, sends to the LLM, and deserializes the JSON response
 3. Maps the deserialized response to the corresponding shared domain model
 
-### Step 3: Location Resolution (within LocationAnalyzer)
+### Step 3: Location Resolution (LocationAnalysisService)
 
-`LocationAnalyzer` performs a two-phase process:
+`LocationAnalysisService` orchestrates a three-step pipeline:
 
-1. **LLM Phase**: Extracts location mentions from article text with type classification.
+1. **Extraction (LLM)**: `LocationAnalyzer` extracts location mentions from article text with type classification.
    Each extracted location includes:
    - `name`: the raw text as it appears in the article (e.g., "하남시 선동", "코엑스", "전국")
    - `type`: one of `ADDRESS`, `LANDMARK`, or `UNRESOLVABLE`
 
-2. **Geocoding Phase**: Processes each extracted location according to its type:
+2. **Validation (LLM)**: `LocationValidator` refines extracted locations before geocoding:
+   - **Filtering**: Removes locations not directly related to the incident (reporter attribution, background mentions, institution-embedded place names)
+   - **Normalization**: Converts abbreviated region names to official full names (e.g., 충남→충청남도, 경북→경상북도, 강원→강원특별자치도)
+   - **Refinement**: Re-applies expression cleanup rules — strips non-administrative elements from ADDRESS types and removes modifier suffixes (인근, 부근, 일대, 근처, 주변) from LANDMARK types
+
+3. **Geocoding**: Processes each validated location according to its type:
 
    **`ADDRESS`** (e.g., "하남시 선동", "전북"):
    ```
@@ -367,6 +391,7 @@ suspend fun <I, O> executeParallel(
 | `keyword-extraction` | KeywordAnalyzer | Refined summary | List of keywords with priority (max 3) |
 | `topic-extraction` | TopicAnalyzer | Refined summary | Topic sentence (complete sentence form) |
 | `location-extraction` | LocationAnalyzer | Refined title + content | List of `{ name, type }` where type is `ADDRESS` / `LANDMARK` / `UNRESOLVABLE` |
+| `location-validation` | LocationValidator | Title + content + extracted locations list | List of `{ name, type }` — filtered, normalized, and refined |
 
 **Error handling**: Each analyzer must handle `LlmExecutionException`, `LlmTimeoutException`, and `LlmRateLimitException` from ai-core. Retry logic via shared `RetryUtil` is applied for transient failures.
 
@@ -417,7 +442,7 @@ The adapter implementation (`KakaoGeocodingAdapter`) uses Spring WebClient (conf
 
 **DB Cache Layer**: Before making API calls, the adapter checks `JpaAddressRepository.findByAddressName(query)` for a previously resolved address. Cache hits skip the API call entirely and return the stored `Location` via `LocationMapper.toDomainModel()`.
 
-**Parallel Geocoding**: `ArticleAnalysisService` resolves all extracted locations concurrently via `coroutineScope { extractedLocations.map { async { resolveLocation(it) } }.awaitAll() }`. Each location is resolved independently based on its `LocationType`.
+**Parallel Geocoding**: `LocationAnalysisService` resolves all validated locations concurrently via `coroutineScope { extractedLocations.map { async { resolveLocation(it) } }.awaitAll() }`. Each location is resolved independently based on its `LocationType`.
 
 `Address.addressName` always stores the LLM-extracted original expression, not the Kakao API response address.
 
@@ -446,6 +471,8 @@ Side effects (LLM calls, geocoding calls, DB writes) are confined to the adapter
 The analysis pipeline uses a two-phase approach. Phase 1 (article refinement) runs sequentially since its output (refined title, content, summary) is required by all Phase 2 analyzers. Phase 2 runs five analysis tasks (incident type, urgency, keywords, topic, location) concurrently via Kotlin coroutines (`async`/`await`). Within `LocationAnalyzer`, geocoding calls for multiple place names can also run in parallel. This minimizes total analysis latency, which is dominated by LLM response times.
 
 ### Error Handling Strategy
-- **LLM failures**: Retry with exponential backoff via `RetryUtil`. After max retries, propagate the exception to the event listener for Kafka retry/DLQ handling.
+- **LLM failures**: Retry with exponential backoff via `RetryUtil` (max 2 retries). After max retries, the exception propagates up.
 - **Geocoding failures**: Retry transient errors. For permanent failures (all API fallbacks exhausted), return a `Location` with `coordinate = null` and `Address(addressName = LLM extracted text, code = "UNKNOWN", regionType = UNKNOWN)`. The `UNRESOLVABLE` type locations skip API calls entirely and always produce this form.
-- **Persistence failures**: Propagate to the event listener. The Kafka consumer will retry the message based on its retry policy.
+- **Persistence failures**: Propagate to the event listener.
+- **Error wrapping**: `ArticleAnalysisService.analyze()` catches all exceptions, logs at ERROR level with `articleId`, and wraps them in `ArticleAnalysisException(articleId, message, cause)`. The `ArticleEventListener` extracts `articleId` from this exception for structured error logging at the Kafka consumption boundary.
+- **Retry logging**: All `withRetry` calls include `articleId` in warn-level retry logs for traceability.
