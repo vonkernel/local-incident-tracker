@@ -2,7 +2,7 @@
 
 ## Overview
 
-The analyzer module consumes Article CDC events from Kafka, performs parallel LLM-based analysis using the ai-core module, and persists aggregated results via the persistence module. The stored `AnalysisResult` acts as a transactional outbox entry, triggering downstream CDC events for the indexer.
+The analyzer module consumes Article CDC events from Kafka, performs a two-phase LLM-based analysis pipeline using the ai-core module, and persists aggregated results via the persistence module. The stored `AnalysisResult` acts as a transactional outbox entry, triggering downstream CDC events for the indexer.
 
 ```
 Kafka (article-events)
@@ -10,14 +10,17 @@ Kafka (article-events)
 [Event Listener] ─ Inbound Adapter
     ↓
 [ArticleAnalysisService] ─ Application Layer
-    ├─ Parallel LLM Analysis (ai-core)
-    │   ├─ Incident type classification → Set<IncidentType>
-    │   ├─ Urgency assessment → Urgency
-    │   ├─ Keyword extraction → List<Keyword>
-    │   └─ Location extraction → List<String> (place names)
     │
-    └─ Geocoding (External API)
-        └─ Place names → List<Location> (coordinates + addresses)
+    ├─ Phase 1: Article Refinement (sequential)
+    │   └─ RefineArticleAnalyzer → RefinedArticle (title, content, summary, writtenAt)
+    │
+    └─ Phase 2: Parallel Analysis (5 concurrent, using refined article)
+        ├─ Incident type classification (title + content) → Set<IncidentType>
+        ├─ Urgency assessment (title + content) → Urgency
+        ├─ Keyword extraction (summary) → List<Keyword>
+        ├─ Topic extraction (summary) → Topic
+        └─ Location extraction (title + content) → List<String> (place names)
+            └─ Geocoding (External API) → List<Location>
     ↓
 [AnalysisResult assembly]
     ↓
@@ -55,11 +58,13 @@ The listener is responsible for:
 
 | Component | Responsibility |
 |-----------|---------------|
-| `ArticleAnalysisService` | Top-level orchestration: receives an `Article`, coordinates all analyzers in parallel via coroutines, assembles the final `AnalysisResult`, and delegates persistence |
-| `IncidentTypeAnalyzer` | Classifies the article into one or more incident types (e.g., "forest_fire", "typhoon") using LLM prompt execution. Returns `Set<IncidentType>` |
-| `UrgencyAnalyzer` | Assesses the urgency/severity level of the incident using LLM. Returns `Urgency` with name and numeric level |
-| `KeywordAnalyzer` | Extracts prioritized keywords from the article content using LLM. Returns `List<Keyword>` with keyword text and priority ranking |
-| `LocationAnalyzer` | Extracts geographic location mentions from article text using LLM. Each extracted location is classified as `ADDRESS`, `LANDMARK`, or `UNRESOLVABLE`. Based on the classification, resolves each location to coordinates and structured addresses via the geocoding port (see `GEOCODING_API.md` for details). Returns `List<Location>` |
+| `ArticleAnalysisService` | Top-level orchestration: receives an `Article`, runs 2-phase pipeline (refine → parallel analysis), assembles the final `AnalysisResult`, and delegates persistence |
+| `RefineArticleAnalyzer` | Phase 1: Refines raw article by removing noise (journalist info, newlines, "끝" markers), restructuring content as individual fact sentences, and generating a 3-sentence summary. Returns `RefinedArticle` |
+| `IncidentTypeAnalyzer` | Classifies the refined article into one or more incident types (e.g., "forest_fire", "typhoon") using LLM prompt execution. Returns `Set<IncidentType>` |
+| `UrgencyAnalyzer` | Assesses the urgency/severity level of the incident from the refined article using LLM. Returns `Urgency` with name and numeric level |
+| `KeywordAnalyzer` | Extracts up to 3 prioritized keywords from the refined article summary using LLM. Returns `List<Keyword>` with keyword text and priority ranking |
+| `TopicAnalyzer` | Extracts a single topic sentence from the refined article summary using LLM. Returns `Topic` with a complete sentence (not keyword combination) |
+| `LocationAnalyzer` | Extracts geographic location mentions from the refined article text using LLM. Each extracted location is classified as `ADDRESS`, `LANDMARK`, or `UNRESOLVABLE`. Based on the classification, resolves each location to coordinates and structured addresses via the geocoding port (see `GEOCODING_API.md` for details). Returns `List<Location>` |
 
 ### Outbound Ports (Driven Side)
 
@@ -89,7 +94,8 @@ The listener is responsible for:
 │                                                          │
 │  ArticleAnalysisService (@Service)                       │
 │  - Entry point for analysis orchestration                │
-│  - Launches parallel coroutines for each analyzer        │
+│  - Phase 1: RefineArticleAnalyzer (sequential)           │
+│  - Phase 2: 5 parallel analyzers using refined article   │
 │  - Awaits all results and assembles AnalysisResult       │
 │  - Calls AnalysisResultRepository.save()                 │
 └─────────────────────────┬───────────────────────────────┘
@@ -98,28 +104,40 @@ The listener is responsible for:
 │ DOMAIN LAYER                                             │
 │                                                          │
 │  Individual Analyzers (interface + @Service impl)        │
-│  ├─ IncidentTypeAnalyzer                                 │
+│  ├─ RefineArticleAnalyzer (Phase 1 - sequential)         │
+│  │   └─ Uses PromptOrchestrator.execute()                │
+│  │      promptId: "refine-article"                       │
+│  │      input: article title + content                   │
+│  │      output: RefinedArticle                           │
+│  │                                                       │
+│  ├─ IncidentTypeAnalyzer (Phase 2 - parallel)            │
 │  │   └─ Uses PromptOrchestrator.execute()                │
 │  │      promptId: "incident-type-classification"         │
-│  │      input: article title + content                   │
+│  │      input: refined title + content                   │
 │  │      output: Set<IncidentType>                        │
 │  │                                                       │
-│  ├─ UrgencyAnalyzer                                      │
+│  ├─ UrgencyAnalyzer (Phase 2 - parallel)                 │
 │  │   └─ Uses PromptOrchestrator.execute()                │
 │  │      promptId: "urgency-assessment"                   │
-│  │      input: article title + content                   │
+│  │      input: refined title + content                   │
 │  │      output: Urgency                                  │
 │  │                                                       │
-│  ├─ KeywordAnalyzer                                      │
+│  ├─ KeywordAnalyzer (Phase 2 - parallel)                 │
 │  │   └─ Uses PromptOrchestrator.execute()                │
 │  │      promptId: "keyword-extraction"                   │
-│  │      input: article title + content                   │
-│  │      output: List<Keyword>                            │
+│  │      input: refined summary                           │
+│  │      output: List<Keyword> (max 3)                    │
 │  │                                                       │
-│  └─ LocationAnalyzer                                     │
+│  ├─ TopicAnalyzer (Phase 2 - parallel)                   │
+│  │   └─ Uses PromptOrchestrator.execute()                │
+│  │      promptId: "topic-extraction"                     │
+│  │      input: refined summary                           │
+│  │      output: Topic                                    │
+│  │                                                       │
+│  └─ LocationAnalyzer (Phase 2 - parallel)                │
 │      ├─ Uses PromptOrchestrator.execute()                │
 │      │   promptId: "location-extraction"                 │
-│      │   input: article title + content                  │
+│      │   input: refined title + content                  │
 │      │   output: List<ExtractedLocation>                 │
 │      │     ExtractedLocation: { name, type }             │
 │      │     type: ADDRESS | LANDMARK | UNRESOLVABLE       │
@@ -178,10 +196,12 @@ com.vonkernel.lit.analyzer
 │   ├── service
 │   │   └── ArticleAnalysisService.kt              # Analysis orchestration service
 │   ├── analyzer
-│   │   ├── IncidentTypeAnalyzer.kt                # Incident type classification (LLM)
-│   │   ├── UrgencyAnalyzer.kt                     # Urgency assessment (LLM)
-│   │   ├── KeywordAnalyzer.kt                     # Keyword extraction (LLM)
-│   │   └── LocationAnalyzer.kt                    # Location extraction (LLM)
+│   │   ├── RefineArticleAnalyzer.kt               # Phase 1: Article refinement (LLM)
+│   │   ├── IncidentTypeAnalyzer.kt                # Phase 2: Incident type classification (LLM)
+│   │   ├── UrgencyAnalyzer.kt                     # Phase 2: Urgency assessment (LLM)
+│   │   ├── KeywordAnalyzer.kt                     # Phase 2: Keyword extraction (LLM, summary-based)
+│   │   ├── TopicAnalyzer.kt                       # Phase 2: Topic extraction (LLM, summary-based)
+│   │   └── LocationAnalyzer.kt                    # Phase 2: Location extraction (LLM)
 │   │
 │   └── port
 │       └── GeocodingPort.kt                       # Outbound port for geocoding external API
@@ -202,22 +222,35 @@ The listener:
 2. Constructs an `Article` domain object (from shared module)
 3. Invokes `ArticleAnalysisService.analyze(article)`
 
-### Step 2: Parallel LLM Analysis
+### Step 2: Two-Phase LLM Analysis
 
-`ArticleAnalysisService` launches four concurrent analysis tasks within a `coroutineScope`. Each analyzer receives the article and uses `PromptOrchestrator` from ai-core to execute its designated LLM prompt.
+`ArticleAnalysisService` implements a two-phase analysis pipeline:
+
+**Phase 1 (Sequential)**: Refine the raw article to remove noise and produce a clean, structured version with a summary.
+
+```kotlin
+val refinedArticle = withRetry("refineArticleAnalyzer") {
+    refineArticleAnalyzer.analyze(article)
+}
+```
+
+**Phase 2 (Parallel)**: Five concurrent analysis tasks using the refined article.
 
 ```kotlin
 coroutineScope {
-    val incidentTypes = async { incidentTypeAnalyzer.analyze(article) }
-    val urgency       = async { urgencyAnalyzer.analyze(article) }
-    val keywords      = async { keywordAnalyzer.analyze(article) }
-    val locations     = async { locationAnalyzer.analyze(article) }
+    val incidentTypes = async { incidentTypeAnalyzer.analyze(refinedArticle.title, refinedArticle.content) }
+    val urgency       = async { urgencyAnalyzer.analyze(refinedArticle.title, refinedArticle.content) }
+    val keywords      = async { keywordAnalyzer.analyze(refinedArticle.summary) }
+    val topic         = async { topicAnalyzer.analyze(refinedArticle.summary) }
+    val locations     = async { locationAnalyzer.analyze(refinedArticle.title, refinedArticle.content) }
 
     AnalysisResult(
         articleId     = article.articleId,
+        refinedArticle = refinedArticle,
         incidentTypes = incidentTypes.await(),
         urgency       = urgency.await(),
         keywords      = keywords.await(),
+        topic         = topic.await(),
         locations     = locations.await()
     )
 }
@@ -276,16 +309,18 @@ The geocoding calls can be parallelized via coroutines since each location is in
 
 ### Step 4: Result Assembly and Persistence
 
-After all four analyzers complete:
+After all analyzers complete:
 
 1. `ArticleAnalysisService` assembles the final `AnalysisResult`:
    ```kotlin
    AnalysisResult(
-       articleId     = article.articleId,
-       incidentTypes = Set<IncidentType>,   // from IncidentTypeAnalyzer
-       urgency       = Urgency,             // from UrgencyAnalyzer
-       keywords      = List<Keyword>,       // from KeywordAnalyzer
-       locations     = List<Location>       // from LocationAnalyzer
+       articleId      = article.articleId,
+       refinedArticle = RefinedArticle,      // from RefineArticleAnalyzer (Phase 1)
+       incidentTypes  = Set<IncidentType>,   // from IncidentTypeAnalyzer (Phase 2)
+       urgency        = Urgency,             // from UrgencyAnalyzer (Phase 2)
+       keywords       = List<Keyword>,       // from KeywordAnalyzer (Phase 2)
+       topic          = Topic,               // from TopicAnalyzer (Phase 2)
+       locations      = List<Location>       // from LocationAnalyzer (Phase 2)
    )
    ```
 
@@ -326,10 +361,12 @@ suspend fun <I, O> executeParallel(
 **Prompt IDs used by analyzer**:
 | Prompt ID | Analyzer | Input | Output |
 |-----------|----------|-------|--------|
-| `incident-type-classification` | IncidentTypeAnalyzer | Article title + content | Set of incident type codes and names |
-| `urgency-assessment` | UrgencyAnalyzer | Article title + content | Urgency name and numeric level |
-| `keyword-extraction` | KeywordAnalyzer | Article title + content | List of keywords with priority |
-| `location-extraction` | LocationAnalyzer | Article title + content | List of `{ name, type }` where type is `ADDRESS` / `LANDMARK` / `UNRESOLVABLE` |
+| `refine-article` | RefineArticleAnalyzer | Article title + content | Refined title, content (fact sentences), summary (3 sentences) |
+| `incident-type-classification` | IncidentTypeAnalyzer | Refined title + content | Set of incident type codes and names |
+| `urgency-assessment` | UrgencyAnalyzer | Refined title + content | Urgency name and numeric level |
+| `keyword-extraction` | KeywordAnalyzer | Refined summary | List of keywords with priority (max 3) |
+| `topic-extraction` | TopicAnalyzer | Refined summary | Topic sentence (complete sentence form) |
+| `location-extraction` | LocationAnalyzer | Refined title + content | List of `{ name, type }` where type is `ADDRESS` / `LANDMARK` / `UNRESOLVABLE` |
 
 **Error handling**: Each analyzer must handle `LlmExecutionException`, `LlmTimeoutException`, and `LlmRateLimitException` from ai-core. Retry logic via shared `RetryUtil` is applied for transient failures.
 
@@ -406,7 +443,7 @@ Each individual analyzer's internal logic follows functional principles:
 Side effects (LLM calls, geocoding calls, DB writes) are confined to the adapter layer boundaries.
 
 ### Coroutine-Based Concurrency
-All four analysis tasks (incident type, urgency, keywords, location) are independent and execute concurrently via Kotlin coroutines (`async`/`await`). Within `LocationAnalyzer`, geocoding calls for multiple place names can also run in parallel. This minimizes total analysis latency, which is dominated by LLM response times.
+The analysis pipeline uses a two-phase approach. Phase 1 (article refinement) runs sequentially since its output (refined title, content, summary) is required by all Phase 2 analyzers. Phase 2 runs five analysis tasks (incident type, urgency, keywords, topic, location) concurrently via Kotlin coroutines (`async`/`await`). Within `LocationAnalyzer`, geocoding calls for multiple place names can also run in parallel. This minimizes total analysis latency, which is dominated by LLM response times.
 
 ### Error Handling Strategy
 - **LLM failures**: Retry with exponential backoff via `RetryUtil`. After max retries, propagate the exception to the event listener for Kafka retry/DLQ handling.
