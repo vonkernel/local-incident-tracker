@@ -8,6 +8,7 @@ object AnalysisResultMapper {
     fun toDomainModel(entity: AnalysisResultEntity): AnalysisResult =
         AnalysisResult(
             articleId = entity.articleId,
+            refinedArticle = RefinedArticleMapper.toDomainModel(entity.refinedArticle!!),
             incidentTypes = entity.incidentTypeMappings
                 .mapNotNull { it.incidentType }
                 .map { IncidentTypeMapper.toDomainModel(it) }
@@ -16,6 +17,7 @@ object AnalysisResultMapper {
                 .let { UrgencyMapper.toDomainModel(it) },
             keywords = entity.keywords
                 .map { KeywordMapper.toDomainModel(it) },
+            topic = TopicMapper.toDomainModel(entity.topicAnalysis!!),
             locations = entity.addressMappings
                 .mapNotNull { it.address }
                 .map { LocationMapper.toDomainModel(it) }
