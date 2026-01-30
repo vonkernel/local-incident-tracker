@@ -211,7 +211,7 @@ class AnalysisResultRepositoryAdapterTest {
         val saved = adapter.save(analysisResult)
 
         // Then: 도메인 모델 타입 확인
-        assertThat(saved).isInstanceOf(com.vonkernel.lit.entity.AnalysisResult::class.java)
+        assertThat(saved).isInstanceOf(com.vonkernel.lit.core.entity.AnalysisResult::class.java)
 
         // Then: 모든 필드가 정확히 매핑됨
         assertThat(saved.articleId).isEqualTo(analysisResult.articleId)
@@ -1707,5 +1707,69 @@ class AnalysisResultRepositoryAdapterTest {
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         assertThat(fromDb.incidentTypeMappings).hasSize(2)
+    }
+
+    // ===== Part 11: existsByArticleId / deleteByArticleId 테스트 (4개) =====
+
+    @Test
+    @DisplayName("Part 11.1: existsByArticleId - 존재하는 articleId에 대해 true를 반환한다")
+    fun existsByArticleId_exists_returnsTrue() {
+        // Given
+        val article = jpaArticleRepository.save(
+            TestFixtures.createArticleEntity(articleId = "article-exists-1")
+        )
+        val analysisResult = TestFixtures.createAnalysisResult(
+            articleId = article.articleId,
+            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
+            urgency = TestFixtures.createUrgency("HIGH", 3)
+        )
+        adapter.save(analysisResult)
+
+        // When
+        val exists = adapter.existsByArticleId("article-exists-1")
+
+        // Then
+        assertThat(exists).isTrue()
+    }
+
+    @Test
+    @DisplayName("Part 11.2: existsByArticleId - 존재하지 않는 articleId에 대해 false를 반환한다")
+    fun existsByArticleId_notExists_returnsFalse() {
+        // When
+        val exists = adapter.existsByArticleId("non-existent-article-id")
+
+        // Then
+        assertThat(exists).isFalse()
+    }
+
+    @Test
+    @DisplayName("Part 11.3: deleteByArticleId - 존재하는 articleId의 분석 결과를 삭제한다")
+    fun deleteByArticleId_exists_deletesSuccessfully() {
+        // Given
+        val article = jpaArticleRepository.save(
+            TestFixtures.createArticleEntity(articleId = "article-delete-1")
+        )
+        val analysisResult = TestFixtures.createAnalysisResult(
+            articleId = article.articleId,
+            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
+            urgency = TestFixtures.createUrgency("HIGH", 3)
+        )
+        adapter.save(analysisResult)
+
+        // When
+        adapter.deleteByArticleId("article-delete-1")
+
+        // Then
+        assertThat(adapter.existsByArticleId("article-delete-1")).isFalse()
+        assertThat(jpaAnalysisResultRepository.findByArticleId("article-delete-1")).isNull()
+    }
+
+    @Test
+    @DisplayName("Part 11.4: deleteByArticleId - 존재하지 않는 articleId에 대해 예외 없이 통과한다")
+    fun deleteByArticleId_notExists_noException() {
+        // When & Then
+        assertThatCode {
+            adapter.deleteByArticleId("non-existent-article-id")
+        }.doesNotThrowAnyException()
     }
 }

@@ -3,10 +3,10 @@ package com.vonkernel.lit.collector.domain.service
 import com.vonkernel.lit.collector.domain.exception.CollectionException
 import com.vonkernel.lit.collector.domain.model.ArticlePage
 import com.vonkernel.lit.collector.domain.port.NewsApiPort
-import com.vonkernel.lit.entity.Article
-import com.vonkernel.lit.exception.MaxRetriesExceededException
-import com.vonkernel.lit.repository.ArticleRepository
-import com.vonkernel.lit.util.executeWithRetry
+import com.vonkernel.lit.core.entity.Article
+import com.vonkernel.lit.core.exception.MaxRetriesExceededException
+import com.vonkernel.lit.core.repository.ArticleRepository
+import com.vonkernel.lit.core.util.executeWithRetry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory

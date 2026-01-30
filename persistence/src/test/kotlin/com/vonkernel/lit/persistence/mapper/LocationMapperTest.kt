@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.RegionType
+import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.persistence.TestFixtures
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.offset

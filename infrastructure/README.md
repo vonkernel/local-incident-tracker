@@ -11,6 +11,18 @@ Local 개발 환경을 위한 인프라 구성 (PostgreSQL, Kafka, Debezium, Kaf
 | **Debezium Connect** | 18083 | CDC 커넥터 (PostgreSQL → Kafka) |
 | **Kafka UI** | 18080 | Kafka 관리 웹 인터페이스 |
 
+## 환경 변수
+
+`.env` 파일에서 DB 접속 정보와 Debezium 포트를 관리합니다. `docker-compose.yml`과 모든 스크립트가 이 파일을 공유합니다.
+
+```
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=lit_maindb
+DB_CONTAINER=lit-maindb
+DEBEZIUM_PORT=18083
+```
+
 ## Quick Start
 
 ### 1. 인프라 시작
@@ -27,7 +39,12 @@ docker-compose up -d
 PostgreSQL CDC를 활성화하고 Kafka 토픽을 생성하기 위해 connector를 등록합니다:
 
 ```bash
+# 전체 등록
 ./setup-connectors.sh
+
+# 또는 개별 등록
+./setup-articles-connector.sh
+./setup-analysis-connector.sh
 ```
 
 **등록되는 Connector**:
@@ -36,18 +53,11 @@ PostgreSQL CDC를 활성화하고 Kafka 토픽을 생성하기 위해 connector�
 
 ### 3. 확인
 
-**Kafka UI 접속**: http://localhost:18080
-
-**Kafka 토픽 확인**:
 ```bash
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --list
+./status-connectors.sh
 ```
 
-**Debezium Connector 상태 확인**:
-```bash
-curl http://localhost:18083/connectors/lit-articles-connector/status | jq
-curl http://localhost:18083/connectors/lit-analysis-connector/status | jq
-```
+또는 Kafka UI 접속: http://localhost:18080
 
 ## 데이터 플로우
 
@@ -87,6 +97,18 @@ indexer 서비스 소비
 - URL: http://localhost:18080
 - 기능: 토픽 조회, 메시지 확인, 커넥터 관리, 컨슈머 그룹 모니터링
 
+### 스크립트
+
+| 스크립트 | 용도 |
+|---------|------|
+| `setup-connectors.sh` | 전체 커넥터 일괄 등록 |
+| `setup-articles-connector.sh` | articles 커넥터 단독 등록 |
+| `setup-analysis-connector.sh` | analysis 커넥터 단독 등록 |
+| `reset-connectors.sh` | 전체 리셋 (커넥터 삭제 + publication/slot 삭제 + Debezium 재시작) |
+| `reset-articles-connector.sh` | articles 커넥터 단독 리셋 |
+| `reset-analysis-connector.sh` | analysis 커넥터 단독 리셋 |
+| `status-connectors.sh` | 커넥터 상태 + replication slot + publication 확인 |
+
 ### CLI 도구
 
 **토픽 목록 조회**:
@@ -105,17 +127,6 @@ docker exec lit-kafka kafka-console-consumer \
   --bootstrap-server localhost:9092 \
   --topic lit.public.article \
   --from-beginning
-```
-
-**Connector 목록 조회**:
-```bash
-curl http://localhost:18083/connectors | jq
-```
-
-**Connector 삭제** (재등록 필요 시):
-```bash
-curl -X DELETE http://localhost:18083/connectors/lit-articles-connector
-curl -X DELETE http://localhost:18083/connectors/lit-analysis-connector
 ```
 
 ## PostgreSQL Publication & Replication Slot
@@ -174,24 +185,15 @@ Debezium은 Kafka의 `debezium_connect_offsets` 토픽에도 현재 읽고 있�
 
 ### 상태 확인
 
-**Publication 목록 조회**:
 ```bash
-docker exec lit-maindb psql -U postgres -d lit_maindb -c "SELECT * FROM pg_publication;"
+./status-connectors.sh
 ```
 
-**Publication에 포함된 테이블 조회**:
-```bash
-docker exec lit-maindb psql -U postgres -d lit_maindb -c "SELECT * FROM pg_publication_tables;"
-```
+커넥터 상태, replication slot, publication 정보를 한 번에 확인합니다.
 
-**Replication Slot 상태 조회**:
-```bash
-docker exec lit-maindb psql -U postgres -d lit_maindb -c "SELECT slot_name, plugin, slot_type, active FROM pg_replication_slots;"
-```
+### 리셋 절차
 
-### 전체 리셋 절차
-
-Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처음부터 다시 구성해야 할 때 아래 순서로 리셋합니다.
+Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처음부터 다시 구성해야 할 때 리셋 스크립트를 사용합니다.
 
 **리셋이 필요한 경우**:
 - Connector 설정 변경 (테이블명, publication name 등)
@@ -199,48 +201,53 @@ Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처
 - `change stream starting at ... is no longer available` 에러 발생
 - PostgreSQL과 Kafka 간의 offset 불일치
 
-**리셋 순서와 이유**:
-
+**전체 리셋 후 재등록**:
 ```bash
-# 1. Connector 삭제 (Debezium이 PostgreSQL 연결을 해제하도록)
-curl -X DELETE http://localhost:18083/connectors/lit-articles-connector
-curl -X DELETE http://localhost:18083/connectors/lit-analysis-connector
+./reset-connectors.sh
+./setup-connectors.sh
+```
 
-# 2. PostgreSQL Publication 삭제 (connector가 새로운 설정으로 재생성할 수 있도록)
-docker exec lit-maindb psql -U postgres -d lit_maindb -c "DROP PUBLICATION IF EXISTS dbz_articles_pub;"
-docker exec lit-maindb psql -U postgres -d lit_maindb -c "DROP PUBLICATION IF EXISTS dbz_analysis_pub;"
+**개별 커넥터 리셋 후 재등록**:
+```bash
+# articles 커넥터만
+./reset-articles-connector.sh
+./setup-articles-connector.sh
 
-# 3. PostgreSQL Replication Slot 삭제 (slot이 active 상태면 삭제 불가 → 1번에서 connector 먼저 삭제하는 이유)
-docker exec lit-maindb psql -U postgres -d lit_maindb -c "SELECT pg_drop_replication_slot('debezium_articles');"
-docker exec lit-maindb psql -U postgres -d lit_maindb -c "SELECT pg_drop_replication_slot('debezium_analysis');"
+# analysis 커넥터만
+./reset-analysis-connector.sh
+./setup-analysis-connector.sh
+```
 
-# 4. Debezium Connect 중지 (Kafka 토픽 삭제 전에 중지해야 충돌 방지)
+리셋 스크립트는 다음 순서로 정리합니다:
+1. Connector 삭제 (Debezium이 PostgreSQL 연결을 해제)
+2. Publication 삭제 (connector가 새 설정으로 재생성 가능)
+3. Replication Slot 삭제 (connector 삭제 후에만 가능)
+4. Debezium 재시작 (전체 리셋 시에만)
+
+**중요**: 순서를 지키지 않으면 다음 문제가 발생합니다:
+- Connector 삭제 전 slot 삭제 시도 → `replication slot is active` 에러
+- Kafka offset 토픽을 남긴 채 slot만 삭제 → `change stream is no longer available` 에러
+- Debezium 실행 중 내부 토픽 삭제 → Debezium이 크래시 루프에 빠짐
+
+**완전 초기화가 필요한 경우** (Kafka 내부 토픽까지 삭제):
+```bash
+# Debezium 중지
 docker-compose stop debezium-connect
 
-# 5. Kafka의 Debezium 내부 토픽 삭제 (이전 offset/config 정보 제거 → 새로 시작할 수 있도록)
+# Debezium 내부 토픽 삭제
 docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic debezium_connect_offsets
 docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic debezium_connect_configs
 docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic debezium_connect_statuses
 docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic __debezium-heartbeat.lit
 
-# 6. CDC 데이터 토픽도 삭제 (필요 시, 기존 이벤트 데이터를 버리고 스냅샷부터 다시 시작하려는 경우)
+# CDC 데이터 토픽도 삭제 (스냅샷부터 다시 시작하려는 경우)
 docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic lit.public.article
 docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic lit.public.analysis_result_outbox
 
-# 7. 삭제 확인
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --list
-
-# 8. Debezium Connect 재시작
+# Debezium 재시작 후 커넥터 재등록
 docker-compose up -d debezium-connect
-
-# 9. Debezium이 준비될 때까지 대기 후 Connector 재등록
 ./setup-connectors.sh
 ```
-
-**중요**: 순서를 지키지 않으면 다음 문제가 발생합니다:
-- Connector 삭제 전 slot 삭제 시도 → `replication slot is active` 에러
-- Kafka offset 토픽을 남긴 채 slot만 삭제 → `change stream is no longer available` 에러 (Kafka에 저장된 LSN 위치의 WAL이 이미 삭제됨)
-- Debezium 실행 중 내부 토픽 삭제 → Debezium이 크래시 루프에 빠짐
 
 ## 문제 해결
 

@@ -11,6 +11,7 @@ import com.vonkernel.lit.ai.domain.port.PromptLoader
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 
 /**
@@ -31,7 +32,7 @@ import org.springframework.stereotype.Service
 class PromptOrchestrator(
     private val executors: List<PromptExecutor>,
     private val promptLoader: PromptLoader,
-    private val objectMapper: ObjectMapper
+    @param:Qualifier("aiCoreObjectMapper") private val objectMapper: ObjectMapper
 ) {
     /**
      * 프롬프트 ID로 프롬프트를 로드하고 입력 데이터로 실행

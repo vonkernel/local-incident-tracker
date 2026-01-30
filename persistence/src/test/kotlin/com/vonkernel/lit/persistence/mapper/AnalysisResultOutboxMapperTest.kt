@@ -3,7 +3,7 @@ package com.vonkernel.lit.persistence.mapper
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
-import com.vonkernel.lit.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.persistence.TestFixtures
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -123,7 +123,7 @@ class AnalysisResultOutboxMapperTest {
             locations = listOf(
                 TestFixtures.createLocation(
                     address = TestFixtures.createAddress(
-                        regionType = com.vonkernel.lit.entity.RegionType.BJDONG
+                        regionType = com.vonkernel.lit.core.entity.RegionType.BJDONG
                     )
                 )
             )

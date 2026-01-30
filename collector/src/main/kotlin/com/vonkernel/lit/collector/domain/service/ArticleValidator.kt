@@ -1,6 +1,6 @@
 package com.vonkernel.lit.collector.domain.service
 
-import com.vonkernel.lit.entity.Article
+import com.vonkernel.lit.core.entity.Article
 
 
 fun Article.validate(): Result<Article> {

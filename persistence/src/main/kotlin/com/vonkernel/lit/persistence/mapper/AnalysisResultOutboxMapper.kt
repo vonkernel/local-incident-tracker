@@ -1,13 +1,14 @@
 package com.vonkernel.lit.persistence.mapper
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.vonkernel.lit.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.persistence.entity.outbox.AnalysisResultOutboxEntity
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 
 @Component
 class AnalysisResultOutboxMapper(
-    private val objectMapper: ObjectMapper
+    @param:Qualifier("persistenceObjectMapper") private val objectMapper: ObjectMapper
 ) {
 
     fun toPersistenceModel(analysisResult: AnalysisResult): AnalysisResultOutboxEntity {

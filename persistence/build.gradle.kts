@@ -1,3 +1,6 @@
+import org.gradle.kotlin.dsl.named
+import org.springframework.boot.gradle.tasks.bundling.BootJar
+
 buildscript {
     repositories {
         mavenCentral()
@@ -56,4 +59,13 @@ tasks.register("flywayMigrateLocal") {
         println("Migration Path: $migrationPath")
         println("Target URL: $dbUrl")
     }
+}
+
+// persistence는 라이브러리 모듈이므로 bootJar 비활성화
+tasks.named<BootJar>("bootJar") {
+    enabled = false
+}
+
+tasks.named<Jar>("jar") {
+    enabled = true
 }

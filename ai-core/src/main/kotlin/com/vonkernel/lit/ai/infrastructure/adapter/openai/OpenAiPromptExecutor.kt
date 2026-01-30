@@ -12,6 +12,7 @@ import org.springframework.ai.chat.model.ChatModel
 import org.springframework.ai.chat.model.ChatResponse
 import org.springframework.ai.openai.OpenAiChatOptions
 import org.springframework.ai.openai.api.ResponseFormat
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import org.springframework.ai.chat.prompt.Prompt as SpringAiPrompt
 
@@ -29,7 +30,7 @@ import org.springframework.ai.chat.prompt.Prompt as SpringAiPrompt
 @Component
 class OpenAiPromptExecutor(
     private val chatModel: ChatModel,
-    private val objectMapper: ObjectMapper
+    @param:Qualifier("aiCoreObjectMapper") private val objectMapper: ObjectMapper
 ) : PromptExecutor {
 
     override fun supports(provider: LlmProvider): Boolean =

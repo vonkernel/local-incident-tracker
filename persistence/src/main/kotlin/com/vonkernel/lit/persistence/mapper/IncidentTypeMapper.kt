@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.IncidentType
+import com.vonkernel.lit.core.entity.IncidentType
 import com.vonkernel.lit.persistence.entity.core.IncidentTypeEntity
 
 object IncidentTypeMapper {

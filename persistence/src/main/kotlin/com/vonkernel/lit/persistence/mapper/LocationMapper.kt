@@ -1,8 +1,8 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.Address
-import com.vonkernel.lit.entity.Location
-import com.vonkernel.lit.entity.RegionType
+import com.vonkernel.lit.core.entity.Address
+import com.vonkernel.lit.core.entity.Location
+import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.persistence.entity.analysis.AddressEntity
 
 object LocationMapper {

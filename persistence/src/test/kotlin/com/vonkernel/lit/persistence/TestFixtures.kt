@@ -1,14 +1,14 @@
 package com.vonkernel.lit.persistence
 
-import com.vonkernel.lit.entity.Address
-import com.vonkernel.lit.entity.AnalysisResult
-import com.vonkernel.lit.entity.Article
-import com.vonkernel.lit.entity.Coordinate
-import com.vonkernel.lit.entity.IncidentType
-import com.vonkernel.lit.entity.Keyword
-import com.vonkernel.lit.entity.Location
-import com.vonkernel.lit.entity.RegionType
-import com.vonkernel.lit.entity.Urgency
+import com.vonkernel.lit.core.entity.Address
+import com.vonkernel.lit.core.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.Article
+import com.vonkernel.lit.core.entity.Coordinate
+import com.vonkernel.lit.core.entity.IncidentType
+import com.vonkernel.lit.core.entity.Keyword
+import com.vonkernel.lit.core.entity.Location
+import com.vonkernel.lit.core.entity.RegionType
+import com.vonkernel.lit.core.entity.Urgency
 import com.vonkernel.lit.persistence.entity.analysis.ArticleKeywordEntity
 import com.vonkernel.lit.persistence.entity.analysis.AddressCoordinateEntity
 import com.vonkernel.lit.persistence.entity.analysis.AddressEntity

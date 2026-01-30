@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.mapper
 
-import com.vonkernel.lit.entity.Article
+import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.persistence.entity.core.ArticleEntity
 import java.time.ZonedDateTime
 import java.time.ZoneId

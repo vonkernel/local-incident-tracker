@@ -26,7 +26,7 @@ class AiCoreConfiguration {
      * - 알 수 없는 필드 무시
      */
     @Bean
-    fun objectMapper(): ObjectMapper {
+    fun aiCoreObjectMapper(): ObjectMapper {
         return ObjectMapper().apply {
             // Kotlin 모듈 등록
             registerModule(

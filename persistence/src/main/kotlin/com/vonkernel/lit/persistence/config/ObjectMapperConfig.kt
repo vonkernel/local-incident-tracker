@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration
 class ObjectMapperConfig {
 
     @Bean
-    fun objectMapper(): ObjectMapper =
+    fun persistenceObjectMapper(): ObjectMapper =
         ObjectMapper()
             .registerModule(JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
