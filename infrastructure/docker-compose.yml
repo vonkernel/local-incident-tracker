@@ -3,9 +3,9 @@ services:
     image: postgres:18-alpine
     container_name: lit-maindb
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: lit_maindb
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     command:
       - "postgres"
@@ -17,7 +17,7 @@ services:
       - lit_maindb_data:/var/lib/postgresql/data
       - ./init-scripts:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -62,7 +62,7 @@ services:
     image: quay.io/debezium/connect:3.4
     container_name: lit-debezium
     ports:
-      - "18083:8083"
+      - "${DEBEZIUM_PORT}:8083"
     environment:
       BOOTSTRAP_SERVERS: kafka:29092
       GROUP_ID: 1
