@@ -120,7 +120,6 @@ class ArticleAnalysisService(
     private suspend fun resolveAddress(name: String): List<Location> =
         withRetry("geocodeByAddress") {
             geocodingPort.geocodeByAddress(name)
-                .ifEmpty { geocodingPort.geocodeByKeyword(name) }
                 .ifEmpty { listOf(unresolvedLocation(name)) }
         }
 
