@@ -4,7 +4,6 @@ import com.vonkernel.lit.ai.application.PromptOrchestrator
 import com.vonkernel.lit.analyzer.domain.model.IncidentTypeClassificationInput
 import com.vonkernel.lit.analyzer.domain.model.IncidentTypeClassificationOutput
 import com.vonkernel.lit.analyzer.domain.model.IncidentTypeItem
-import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.core.entity.IncidentType
 import com.vonkernel.lit.core.repository.IncidentTypeRepository
 import org.springframework.stereotype.Service
@@ -15,13 +14,13 @@ class DefaultIncidentTypeAnalyzer(
     private val incidentTypeRepository: IncidentTypeRepository
 ) : IncidentTypeAnalyzer {
 
-    override suspend fun analyze(article: Article): Set<IncidentType> =
+    override suspend fun analyze(title: String, content: String): Set<IncidentType> =
         incidentTypeRepository.findAll().let { incidentTypes ->
             promptOrchestrator.execute(
                 promptId = "incident-type-classification",
                 input = IncidentTypeClassificationInput(
-                    title = article.title,
-                    content = article.content,
+                    title = title,
+                    content = content,
                     incidentTypeList = IncidentTypeItem.formatList(
                         incidentTypes.map { IncidentTypeItem(code = it.code, name = it.name) }
                     )

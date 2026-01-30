@@ -1,9 +1,9 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-set -a; source "$SCRIPT_DIR/.env"; set +a
+set -a; source "$SCRIPT_DIR/../../.env"; set +a
 
-CONNECTORS_DIR="$SCRIPT_DIR/debezium/connectors"
+CONNECTORS_DIR="$SCRIPT_DIR/../../debezium/connectors"
 DEBEZIUM_URL="http://localhost:${DEBEZIUM_PORT}"
 
 echo "=== Debezium Connector Status ==="

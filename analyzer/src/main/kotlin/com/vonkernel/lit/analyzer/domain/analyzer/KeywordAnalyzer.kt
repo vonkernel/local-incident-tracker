@@ -1,8 +1,7 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
-import com.vonkernel.lit.analyzer.domain.model.KeywordAnalysisResult
-import com.vonkernel.lit.core.entity.Article
+import com.vonkernel.lit.core.entity.Keyword
 
 interface KeywordAnalyzer {
-    suspend fun analyze(article: Article): KeywordAnalysisResult
+    suspend fun analyze(summary: String): List<Keyword>
 }

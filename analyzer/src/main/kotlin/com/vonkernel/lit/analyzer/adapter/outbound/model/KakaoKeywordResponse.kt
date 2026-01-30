@@ -11,17 +11,17 @@ data class KakaoKeywordResponse(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class KakaoKeywordDocument(
-    val id: String,
+    val id: String?,
 
     @param:JsonProperty("place_name")
-    val placeName: String,
+    val placeName: String?,
 
     @param:JsonProperty("address_name")
-    val addressName: String,
+    val addressName: String?,
 
     @param:JsonProperty("road_address_name")
     val roadAddressName: String?,
 
-    val x: String,
-    val y: String
+    val x: String?,
+    val y: String?
 )

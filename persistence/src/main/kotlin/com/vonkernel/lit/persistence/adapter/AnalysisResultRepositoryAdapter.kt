@@ -17,6 +17,8 @@ import com.vonkernel.lit.persistence.mapper.AnalysisResultMapper
 import com.vonkernel.lit.persistence.mapper.AnalysisResultOutboxMapper
 import com.vonkernel.lit.persistence.mapper.KeywordMapper
 import com.vonkernel.lit.persistence.mapper.LocationMapper
+import com.vonkernel.lit.persistence.mapper.RefinedArticleMapper
+import com.vonkernel.lit.persistence.mapper.TopicMapper
 import com.vonkernel.lit.core.repository.AnalysisResultRepository
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
@@ -51,6 +53,8 @@ class AnalysisResultRepositoryAdapter(
 
     private fun buildAnalysisResultEntity(analysisResult: AnalysisResult): AnalysisResultEntity =
         AnalysisResultEntity(articleId = analysisResult.articleId).apply {
+            RefinedArticleMapper.toPersistenceModel(analysisResult.refinedArticle).setupAnalysisResult(this)
+            TopicMapper.toPersistenceModel(analysisResult.topic).setupAnalysisResult(this)
             createUrgencyMapping(loadUrgency(analysisResult)).setupAnalysisResult(this)
             createIncidentTypeMappings(loadIncidentTypes(analysisResult)).forEach { it.setupAnalysisResult(this) }
             createAddressMappings(loadOrCreateAddresses(analysisResult)).forEach { it.setupAnalysisResult(this) }
@@ -70,7 +74,7 @@ class AnalysisResultRepositoryAdapter(
             val addressCode = location.address.code
             jpaAddressRepository.findByRegionTypeAndCode(regionCode, addressCode)
                 ?: jpaAddressRepository.save(LocationMapper.toPersistenceModel(location))
-        }
+        }.distinctBy { it.id }
 
     private fun createUrgencyMapping(urgencyTypeEntity: UrgencyTypeEntity) =
         UrgencyMappingEntity(urgencyType = urgencyTypeEntity)

@@ -21,6 +21,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
         }
 
         val domain = AnalysisResultMapper.toDomainModel(entity)
@@ -40,6 +42,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
         }
 
         val domain = AnalysisResultMapper.toDomainModel(entity)
@@ -59,6 +63,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             incidentTypeMappings.add(
                 IncidentTypeMappingEntity(
                     analysisResult = this,
@@ -85,6 +91,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             incidentTypeMappings.add(
                 IncidentTypeMappingEntity(
                     analysisResult = this,
@@ -135,6 +143,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             incidentTypeMappings.add(
                 IncidentTypeMappingEntity(
                     analysisResult = this,
@@ -167,6 +177,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
         }
 
         val domain = AnalysisResultMapper.toDomainModel(entity)
@@ -187,6 +199,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
         }
 
         val domain = AnalysisResultMapper.toDomainModel(entity)
@@ -205,6 +219,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             val keywordEntity = ArticleKeywordEntity(
                 keyword = "화재",
                 priority = 10
@@ -231,6 +247,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             for (i in 1..10) {
                 val keywordEntity = ArticleKeywordEntity(
                     keyword = "keyword_$i",
@@ -258,6 +276,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
         }
 
         val domain = AnalysisResultMapper.toDomainModel(entity)
@@ -284,6 +304,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             addressMappings.add(
                 AddressMappingEntity(
                     analysisResult = this,
@@ -310,6 +332,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             for (i in 1..5) {
                 val coordinateEntity = TestFixtures.createCoordinateEntity(
                     latitude = 37.4979 + i * 0.001,
@@ -353,6 +377,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
             addressMappings.add(
                 AddressMappingEntity(
                     analysisResult = this,
@@ -384,6 +410,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
         }
 
         val domain = AnalysisResultMapper.toDomainModel(entity)
@@ -406,6 +434,8 @@ class AnalysisResultMapperTest {
             urgencyMapping = UrgencyMappingEntity(urgencyType = urgencyEntity)
         ).apply {
             urgencyMapping!!.analysisResult = this
+            TestFixtures.createRefinedArticleEntity().setupAnalysisResult(this)
+            TestFixtures.createTopicAnalysisEntity().setupAnalysisResult(this)
 
             // 3 incident types
             incidentTypeMappings.add(

@@ -37,7 +37,13 @@ class AnalysisResultEntity(
     var addressMappings: MutableSet<AddressMappingEntity> = mutableSetOf(),
 
     @OneToMany(mappedBy = "analysisResult", fetch = FetchType.LAZY, cascade = [CascadeType.ALL], orphanRemoval = true)
-    var keywords: MutableSet<ArticleKeywordEntity> = mutableSetOf()
+    var keywords: MutableSet<ArticleKeywordEntity> = mutableSetOf(),
+
+    @OneToOne(mappedBy = "analysisResult", fetch = FetchType.LAZY, cascade = [CascadeType.ALL], orphanRemoval = true)
+    var refinedArticle: RefinedArticleEntity? = null,
+
+    @OneToOne(mappedBy = "analysisResult", fetch = FetchType.LAZY, cascade = [CascadeType.ALL], orphanRemoval = true)
+    var topicAnalysis: TopicAnalysisEntity? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

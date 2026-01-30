@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS article_keywords CASCADE;
 DROP TABLE IF EXISTS address_mapping CASCADE;
 DROP TABLE IF EXISTS incident_type_mapping CASCADE;
 DROP TABLE IF EXISTS urgency_mapping CASCADE;
+DROP TABLE IF EXISTS refined_article CASCADE;
+DROP TABLE IF EXISTS topic_analysis CASCADE;
 DROP TABLE IF EXISTS analysis_result_outbox CASCADE;
 DROP TABLE IF EXISTS analysis_result CASCADE;
 DROP TABLE IF EXISTS address_coordinate CASCADE;
@@ -116,6 +118,31 @@ CREATE TABLE article_keywords (
     keyword VARCHAR(500) NOT NULL,
     priority INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE
+);
+
+-- ============================================
+-- Refined Article Table
+-- ============================================
+CREATE TABLE refined_article (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    analysis_result_id BIGINT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    written_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE
+);
+
+-- ============================================
+-- Topic Analysis Table
+-- ============================================
+CREATE TABLE topic_analysis (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    analysis_result_id BIGINT NOT NULL UNIQUE,
+    topic VARCHAR(500) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE
 );
 

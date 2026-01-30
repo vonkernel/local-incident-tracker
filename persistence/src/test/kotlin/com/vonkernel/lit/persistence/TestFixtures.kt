@@ -7,12 +7,16 @@ import com.vonkernel.lit.core.entity.Coordinate
 import com.vonkernel.lit.core.entity.IncidentType
 import com.vonkernel.lit.core.entity.Keyword
 import com.vonkernel.lit.core.entity.Location
+import com.vonkernel.lit.core.entity.RefinedArticle
 import com.vonkernel.lit.core.entity.RegionType
+import com.vonkernel.lit.core.entity.Topic
 import com.vonkernel.lit.core.entity.Urgency
 import com.vonkernel.lit.persistence.entity.analysis.ArticleKeywordEntity
 import com.vonkernel.lit.persistence.entity.analysis.AddressCoordinateEntity
 import com.vonkernel.lit.persistence.entity.analysis.AddressEntity
 import com.vonkernel.lit.persistence.entity.analysis.AnalysisResultEntity
+import com.vonkernel.lit.persistence.entity.analysis.RefinedArticleEntity
+import com.vonkernel.lit.persistence.entity.analysis.TopicAnalysisEntity
 import com.vonkernel.lit.persistence.entity.core.ArticleEntity
 import com.vonkernel.lit.persistence.entity.core.IncidentTypeEntity
 import com.vonkernel.lit.persistence.entity.core.UrgencyTypeEntity
@@ -55,9 +59,21 @@ object TestFixtures {
         sourceUrl = sourceUrl
     )
 
+    // ===== RefinedArticle (Domain Model) =====
+    fun createRefinedArticle(
+        title: String = "정제된 테스트 기사 제목",
+        content: String = "정제된 테스트 기사 본문",
+        summary: String = "테스트 기사 요약입니다.",
+        writtenAt: Instant = Instant.now()
+    ) = RefinedArticle(title, content, summary, writtenAt)
+
+    // ===== Topic (Domain Model) =====
+    fun createTopic(topic: String = "테스트 토픽 문장입니다") = Topic(topic)
+
     // ===== AnalysisResult (Domain Model) =====
     fun createAnalysisResult(
         articleId: String = "test-article-1",
+        refinedArticle: RefinedArticle = createRefinedArticle(),
         incidentTypes: Set<IncidentType> = setOf(
             IncidentType("fire", "산불"),
             IncidentType("typhoon", "태풍")
@@ -67,8 +83,9 @@ object TestFixtures {
             Keyword("화재", 10),
             Keyword("대피", 8)
         ),
+        topic: Topic = createTopic(),
         locations: List<Location> = listOf(createLocation())
-    ) = AnalysisResult(articleId, incidentTypes, urgency, keywords, locations)
+    ) = AnalysisResult(articleId, refinedArticle, incidentTypes, urgency, keywords, topic, locations)
 
     // ===== Coordinate (Domain Model) =====
     fun createCoordinate(
@@ -143,6 +160,26 @@ object TestFixtures {
     fun createKeywordEntity(keyword: String = "화재", priority: Int = 10) = ArticleKeywordEntity(
         keyword = keyword,
         priority = priority
+    )
+
+    // ===== RefinedArticleEntity (Persistence Model) =====
+    fun createRefinedArticleEntity(
+        title: String = "정제된 테스트 기사 제목",
+        content: String = "정제된 테스트 기사 본문",
+        summary: String = "테스트 기사 요약입니다.",
+        writtenAt: ZonedDateTime = ZonedDateTime.now()
+    ) = RefinedArticleEntity(
+        title = title,
+        content = content,
+        summary = summary,
+        writtenAt = writtenAt
+    )
+
+    // ===== TopicAnalysisEntity (Persistence Model) =====
+    fun createTopicAnalysisEntity(
+        topic: String = "테스트 토픽 문장입니다"
+    ) = TopicAnalysisEntity(
+        topic = topic
     )
 
     // ===== 대량 데이터 생성 =====

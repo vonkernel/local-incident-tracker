@@ -199,14 +199,59 @@ class KakaoGeocodingAdapterTest {
         }
 
         @Test
-        @DisplayName("DB 캐시 miss + 주소 검색 결과 없음 - 빈 리스트")
-        fun cacheMiss_noResults_returnsEmpty() = runTest {
+        @DisplayName("DB 캐시 miss + 주소 검색 결과 없음 (단일 토큰) - broader fallback 없이 빈 리스트")
+        fun cacheMiss_noResults_singleToken_returnsEmpty() = runTest {
             // Given
-            every { jpaAddressRepository.findFirstByAddressName("존재하지 않는 주소") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("존재하지않는주소") } returns null
             mockWebClientGetSingle(Mono.just(KakaoAddressResponse(defaultMeta.copy(totalCount = 0), emptyList())))
 
             // When
-            val result = adapter.geocodeByAddress("존재하지 않는 주소")
+            val result = adapter.geocodeByAddress("존재하지않는주소")
+
+            // Then
+            assertThat(result).isEmpty()
+        }
+
+        @Test
+        @DisplayName("DB 캐시 miss + 주소 검색 결과 없음 (다중 토큰) - 마지막 토큰 제거 후 broader 재검색 성공")
+        fun cacheMiss_noResults_multiToken_broaderFallbackSuccess() = runTest {
+            // Given: "경북 포항시 남구 호동" 검색 실패 → "경북 포항시 남구"로 재검색 성공
+            every { jpaAddressRepository.findFirstByAddressName("경북 포항시 남구 호동") } returns null
+            val emptyResponse = KakaoAddressResponse(defaultMeta.copy(totalCount = 0), emptyList())
+            val broaderDoc = defaultAddressDocument.copy(
+                addressName = "경북 포항시 남구",
+                address = defaultKakaoAddress.copy(
+                    addressName = "경북 포항시 남구",
+                    region1DepthName = "경상북도",
+                    region2DepthName = "포항시 남구",
+                    region3DepthName = "",
+                    region3DepthHName = "",
+                    hCode = "",
+                    bCode = "4711000000"
+                )
+            )
+            val broaderResponse = KakaoAddressResponse(defaultMeta, listOf(broaderDoc))
+            mockWebClientGetSequential(Mono.just(emptyResponse), Mono.just(broaderResponse))
+
+            // When
+            val result = adapter.geocodeByAddress("경북 포항시 남구 호동")
+
+            // Then
+            assertThat(result).hasSize(1)
+            assertThat(result[0].address.addressName).isEqualTo("경북 포항시 남구 호동")
+            assertThat(result[0].address.regionType).isEqualTo(RegionType.BJDONG)
+        }
+
+        @Test
+        @DisplayName("DB 캐시 miss + 주소 검색 결과 없음 (다중 토큰) - broader 재검색도 실패 시 빈 리스트")
+        fun cacheMiss_noResults_multiToken_broaderFallbackAlsoFails() = runTest {
+            // Given
+            every { jpaAddressRepository.findFirstByAddressName("경북 없는군 없는면") } returns null
+            val emptyResponse = KakaoAddressResponse(defaultMeta.copy(totalCount = 0), emptyList())
+            mockWebClientGetSequential(Mono.just(emptyResponse), Mono.just(emptyResponse))
+
+            // When
+            val result = adapter.geocodeByAddress("경북 없는군 없는면")
 
             // Then
             assertThat(result).isEmpty()
