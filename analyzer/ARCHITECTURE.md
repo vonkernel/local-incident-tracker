@@ -64,7 +64,7 @@ The listener is responsible for:
 | `UrgencyAnalyzer` | Assesses the urgency/severity level of the incident from the refined article using LLM. Returns `Urgency` with name and numeric level |
 | `KeywordAnalyzer` | Extracts up to 3 prioritized keywords from the refined article summary using LLM. Returns `List<Keyword>` with keyword text and priority ranking |
 | `TopicAnalyzer` | Extracts a single topic sentence from the refined article summary using LLM. Returns `Topic` with a complete sentence (not keyword combination) |
-| `LocationAnalyzer` | Extracts geographic location mentions from the refined article text using LLM. Each extracted location is classified as `ADDRESS`, `LANDMARK`, or `UNRESOLVABLE`. Based on the classification, resolves each location to coordinates and structured addresses via the geocoding port (see `GEOCODING_API.md` for details). Returns `List<Location>` |
+| `LocationAnalyzer` | Extracts geographic location mentions from the refined article text using LLM. Each extracted location is classified as `ADDRESS` (행정구역 단위만으로 구성된 주소 — 시설명·건물명·도로명 등 비행정 요소 제외), `LANDMARK` (건물명·시설명 등 고유명사 장소 — 행정구역 접두어 유지, 수식어 제거), or `UNRESOLVABLE`. Based on the classification, resolves each location to coordinates and structured addresses via the geocoding port (see `GEOCODING_API.md` for details). Returns `List<Location>` |
 
 ### Outbound Ports (Driven Side)
 
@@ -277,7 +277,7 @@ Each analyzer internally:
    GeocodingPort.geocodeByAddress("하남시 선동")
        → Kakao 주소 검색 API 호출
        → 체계적 주소 + 좌표 획득
-       → fallback: geocodeByKeyword() 호출
+       → 결과 없으면 unresolvedLocation 반환
    ```
 
    **`LANDMARK`** (e.g., "코엑스", "판교JC"):
@@ -409,7 +409,7 @@ interface GeocodingPort {
 | `geocodeByKeyword` | `GET /v2/local/search/keyword.json` | LANDMARK type locations (e.g., "코엑스", "판교JC") |
 
 **Resolution strategy by location type**:
-- **ADDRESS**: `geocodeByAddress()` → fallback `geocodeByKeyword()`
+- **ADDRESS**: `geocodeByAddress()` → fallback `unresolvedLocation()`
 - **LANDMARK**: `geocodeByKeyword()` → extract `address_name` → `geocodeByAddress()` → fallback direct coordinate use
 - **UNRESOLVABLE**: No API call. Store `addressName` only with `coordinate = null`
 
