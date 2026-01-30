@@ -43,7 +43,7 @@ class KakaoGeocodingAdapter(
 
     private suspend fun findCached(query: String): Location? =
         withContext(Dispatchers.IO) {
-            jpaAddressRepository.findByAddressName(query)
+            jpaAddressRepository.findFirstByAddressName(query)
         }?.also {
             log.debug("Address cache hit for: {}", query)
         }?.let(LocationMapper::toDomainModel)

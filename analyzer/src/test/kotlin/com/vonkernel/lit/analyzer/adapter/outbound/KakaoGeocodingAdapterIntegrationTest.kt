@@ -32,7 +32,7 @@ class KakaoGeocodingAdapterIntegrationTest {
         adapter = KakaoGeocodingAdapter(webClient, jpaAddressRepository)
 
         // 캐시 miss로 항상 API 호출하도록 설정
-        every { jpaAddressRepository.findByAddressName(any()) } returns null
+        every { jpaAddressRepository.findFirstByAddressName(any()) } returns null
     }
 
     @Test

@@ -115,7 +115,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("DB 캐시 hit 시 API 호출 없이 캐시된 Location을 반환한다")
         fun cacheHit_returnsFromCache() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("서울 강남구") } returns cachedAddressEntity
+            every { jpaAddressRepository.findFirstByAddressName("서울 강남구") } returns cachedAddressEntity
 
             // When
             val result = adapter.geocodeByAddress("서울 강남구")
@@ -130,7 +130,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("DB 캐시 miss + 주소 검색 성공 (b_code + h_code) - HADONG 우선 1개 Location")
         fun cacheMiss_bothCodes_returnsHadongOnly() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("서울 강남구") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("서울 강남구") } returns null
             mockWebClientGetSingle(Mono.just(KakaoAddressResponse(defaultMeta, listOf(defaultAddressDocument))))
 
             // When
@@ -149,7 +149,7 @@ class KakaoGeocodingAdapterTest {
             // Given
             val addr = defaultKakaoAddress.copy(hCode = "")
             val doc = defaultAddressDocument.copy(address = addr)
-            every { jpaAddressRepository.findByAddressName("서울 강남구") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("서울 강남구") } returns null
             mockWebClientGetSingle(Mono.just(KakaoAddressResponse(defaultMeta, listOf(doc))))
 
             // When
@@ -166,7 +166,7 @@ class KakaoGeocodingAdapterTest {
             // Given
             val addr = defaultKakaoAddress.copy(bCode = "")
             val doc = defaultAddressDocument.copy(address = addr)
-            every { jpaAddressRepository.findByAddressName("서울 강남구") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("서울 강남구") } returns null
             mockWebClientGetSingle(Mono.just(KakaoAddressResponse(defaultMeta, listOf(doc))))
 
             // When
@@ -182,7 +182,7 @@ class KakaoGeocodingAdapterTest {
         fun cacheMiss_nullAddress_returnsUnknownLocation() = runTest {
             // Given
             val doc = defaultAddressDocument.copy(address = null)
-            every { jpaAddressRepository.findByAddressName("서울 강남구") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("서울 강남구") } returns null
             mockWebClientGetSingle(Mono.just(KakaoAddressResponse(defaultMeta, listOf(doc))))
 
             // When
@@ -202,7 +202,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("DB 캐시 miss + 주소 검색 결과 없음 - 빈 리스트")
         fun cacheMiss_noResults_returnsEmpty() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("존재하지 않는 주소") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("존재하지 않는 주소") } returns null
             mockWebClientGetSingle(Mono.just(KakaoAddressResponse(defaultMeta.copy(totalCount = 0), emptyList())))
 
             // When
@@ -216,7 +216,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("API 예외 발생 시 예외가 그대로 전파된다")
         fun apiException_propagatesException() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("에러 테스트") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("에러 테스트") } returns null
             mockWebClientGetSingle(Mono.error(RuntimeException("API 연결 실패")))
 
             // When & Then
@@ -243,7 +243,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("DB 캐시 hit 시 API 호출 없이 캐시된 Location을 반환한다")
         fun cacheHit_returnsFromCache() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("강남역") } returns cachedAddressEntity
+            every { jpaAddressRepository.findFirstByAddressName("강남역") } returns cachedAddressEntity
 
             // When
             val result = adapter.geocodeByKeyword("강남역")
@@ -257,7 +257,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("키워드 검색 성공 후 주소 검색으로 HADONG Location을 반환한다")
         fun keywordThenAddress_returnsHadongLocation() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("강남역") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("강남역") } returns null
             val keywordResponse = KakaoKeywordResponse(defaultMeta, listOf(defaultKeywordDocument))
             val addressResponse = KakaoAddressResponse(defaultMeta, listOf(defaultAddressDocument))
             mockWebClientGetSequential(Mono.just(keywordResponse), Mono.just(addressResponse))
@@ -275,7 +275,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("키워드 검색 성공 + 주소 검색 실패 시 좌표 기반 UNKNOWN Location을 반환한다")
         fun keywordSuccess_addressFails_returnsCoordinateLocation() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("특수 장소") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("특수 장소") } returns null
             val keywordDoc = defaultKeywordDocument.copy(addressName = "서울 강남구 특수동")
             val keywordResponse = KakaoKeywordResponse(defaultMeta, listOf(keywordDoc))
             val addressResponse = KakaoAddressResponse(defaultMeta.copy(totalCount = 0), emptyList())
@@ -295,7 +295,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("키워드 검색 결과 없음 시 빈 리스트를 반환한다")
         fun keywordNoResults_returnsEmpty() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("없는 장소") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("없는 장소") } returns null
             mockWebClientGetSingle(Mono.just(KakaoKeywordResponse(defaultMeta.copy(totalCount = 0), emptyList())))
 
             // When
@@ -309,7 +309,7 @@ class KakaoGeocodingAdapterTest {
         @DisplayName("API 예외 발생 시 예외가 그대로 전파된다")
         fun apiException_propagatesException() = runTest {
             // Given
-            every { jpaAddressRepository.findByAddressName("에러 테스트") } returns null
+            every { jpaAddressRepository.findFirstByAddressName("에러 테스트") } returns null
             mockWebClientGetSingle(Mono.error(RuntimeException("API 연결 실패")))
 
             // When & Then
