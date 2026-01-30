@@ -40,11 +40,11 @@ PostgreSQL CDC를 활성화하고 Kafka 토픽을 생성하기 위해 connector�
 
 ```bash
 # 전체 등록
-./setup-connectors.sh
+./scripts/debezium/setup-connectors.sh
 
 # 또는 개별 등록
-./setup-articles-connector.sh
-./setup-analysis-connector.sh
+./scripts/debezium/setup-articles-connector.sh
+./scripts/debezium/setup-analysis-connector.sh
 ```
 
 **등록되는 Connector**:
@@ -54,7 +54,8 @@ PostgreSQL CDC를 활성화하고 Kafka 토픽을 생성하기 위해 connector�
 ### 3. 확인
 
 ```bash
-./status-connectors.sh
+./scripts/debezium/status.sh
+./scripts/kafka/status.sh
 ```
 
 또는 Kafka UI 접속: http://localhost:18080
@@ -97,17 +98,36 @@ indexer 서비스 소비
 - URL: http://localhost:18080
 - 기능: 토픽 조회, 메시지 확인, 커넥터 관리, 컨슈머 그룹 모니터링
 
-### 스크립트
+### 스크립트 구조
 
-| 스크립트 | 용도 |
-|---------|------|
-| `setup-connectors.sh` | 전체 커넥터 일괄 등록 |
-| `setup-articles-connector.sh` | articles 커넥터 단독 등록 |
-| `setup-analysis-connector.sh` | analysis 커넥터 단독 등록 |
-| `reset-connectors.sh` | 전체 리셋 (커넥터 삭제 + publication/slot 삭제 + Debezium 재시작) |
-| `reset-articles-connector.sh` | articles 커넥터 단독 리셋 |
-| `reset-analysis-connector.sh` | analysis 커넥터 단독 리셋 |
-| `status-connectors.sh` | 커넥터 상태 + replication slot + publication 확인 |
+모든 스크립트는 `scripts/` 디렉토리 하위에 SRP 기반으로 분류되어 있습니다.
+
+```
+scripts/
+├── db/
+│   ├── drop-all.sh                    # DB 전체 테이블/시퀀스 DROP
+│   └── migrate.sh                     # Flyway 마이그레이션 실행
+├── kafka/
+│   ├── delete-topics.sh               # 전체 토픽 + consumer group + offset 삭제
+│   ├── delete-article-topic.sh        # article 토픽 + analyzer-group + offset 삭제
+│   ├── delete-analysis-topic.sh       # analysis 토픽 + indexer-group + offset 삭제
+│   └── status.sh                      # 토픽/consumer group 상태 조회
+├── debezium/
+│   ├── delete-connectors.sh           # 전체 커넥터 삭제 (커넥터 + publication + slot)
+│   ├── delete-articles-connector.sh   # articles 커넥터 삭제
+│   ├── delete-analysis-connector.sh   # analysis 커넥터 삭제
+│   ├── setup-connectors.sh            # 전체 커넥터 등록
+│   ├── setup-articles-connector.sh    # articles 커넥터 등록
+│   ├── setup-analysis-connector.sh    # analysis 커넥터 등록
+│   └── status.sh                      # 커넥터 + replication slot + publication 상태 조회
+└── reset-all.sh                       # 전체 시스템 초기화 오케스트레이션
+```
+
+**책임 분리**:
+- `db/`: PostgreSQL 스키마 관리
+- `kafka/`: Kafka 토픽, consumer group, `debezium_connect_offsets` tombstone 관리
+- `debezium/`: Debezium REST API + PostgreSQL publication/replication slot 관리
+- `reset-all.sh`: 위 스크립트들을 순차 호출하여 전체 시스템 초기화
 
 ### CLI 도구
 
@@ -186,68 +206,62 @@ Debezium은 Kafka의 `debezium_connect_offsets` 토픽에도 현재 읽고 있�
 ### 상태 확인
 
 ```bash
-./status-connectors.sh
+./scripts/debezium/status.sh    # 커넥터 + replication slot + publication
+./scripts/kafka/status.sh       # 토픽 + consumer group
 ```
 
-커넥터 상태, replication slot, publication 정보를 한 번에 확인합니다.
+### 삭제 및 재등록
 
-### 리셋 절차
+Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처음부터 다시 구성해야 할 때 사용합니다.
 
-Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처음부터 다시 구성해야 할 때 리셋 스크립트를 사용합니다.
-
-**리셋이 필요한 경우**:
+**필요한 경우**:
 - Connector 설정 변경 (테이블명, publication name 등)
 - `No table filters found for filtered publication` 에러 발생
 - `change stream starting at ... is no longer available` 에러 발생
 - PostgreSQL과 Kafka 간의 offset 불일치
 
-**전체 리셋 후 재등록**:
+**전체 삭제 후 재등록**:
 ```bash
-./reset-connectors.sh
-./setup-connectors.sh
+./scripts/debezium/delete-connectors.sh   # 커넥터 + publication + slot 삭제
+./scripts/kafka/delete-topics.sh          # 토픽 + consumer group + offset 삭제
+./scripts/debezium/setup-connectors.sh    # 커넥터 재등록
 ```
 
-**개별 커넥터 리셋 후 재등록**:
+**개별 커넥터 삭제 후 재등록**:
 ```bash
 # articles 커넥터만
-./reset-articles-connector.sh
-./setup-articles-connector.sh
+./scripts/debezium/delete-articles-connector.sh
+./scripts/kafka/delete-article-topic.sh
+./scripts/debezium/setup-articles-connector.sh
 
 # analysis 커넥터만
-./reset-analysis-connector.sh
-./setup-analysis-connector.sh
+./scripts/debezium/delete-analysis-connector.sh
+./scripts/kafka/delete-analysis-topic.sh
+./scripts/debezium/setup-analysis-connector.sh
 ```
 
-리셋 스크립트는 다음 순서로 정리합니다:
-1. Connector 삭제 (Debezium이 PostgreSQL 연결을 해제)
-2. Publication 삭제 (connector가 새 설정으로 재생성 가능)
-3. Replication Slot 삭제 (connector 삭제 후에만 가능)
-4. Debezium 재시작 (전체 리셋 시에만)
+삭제 시 정리되는 리소스:
+- **debezium/delete**: Connector 삭제 + Publication DROP + Replication Slot DROP
+- **kafka/delete**: 토픽 삭제 + Consumer Group 삭제 + `debezium_connect_offsets` tombstone 전송
 
 **중요**: 순서를 지키지 않으면 다음 문제가 발생합니다:
 - Connector 삭제 전 slot 삭제 시도 → `replication slot is active` 에러
 - Kafka offset 토픽을 남긴 채 slot만 삭제 → `change stream is no longer available` 에러
-- Debezium 실행 중 내부 토픽 삭제 → Debezium이 크래시 루프에 빠짐
 
-**완전 초기화가 필요한 경우** (Kafka 내부 토픽까지 삭제):
+### 전체 시스템 초기화
+
+DB 스키마까지 포함한 완전 초기화가 필요한 경우:
+
 ```bash
-# Debezium 중지
-docker-compose stop debezium-connect
-
-# Debezium 내부 토픽 삭제
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic debezium_connect_offsets
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic debezium_connect_configs
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic debezium_connect_statuses
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic __debezium-heartbeat.lit
-
-# CDC 데이터 토픽도 삭제 (스냅샷부터 다시 시작하려는 경우)
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic lit.public.article
-docker exec lit-kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic lit.public.analysis_result_outbox
-
-# Debezium 재시작 후 커넥터 재등록
-docker-compose up -d debezium-connect
-./setup-connectors.sh
+./scripts/reset-all.sh
 ```
+
+실행 순서:
+1. `debezium/delete-connectors.sh` — 커넥터 제거 (DB 안전 DROP을 위해 먼저 실행)
+2. `kafka/delete-topics.sh` — 토픽 + consumer group + offset 삭제
+3. `db/drop-all.sh` — DB 전체 스키마 DROP
+4. `db/migrate.sh` — Flyway로 테이블 재생성
+5. `debezium/setup-connectors.sh` — 커넥터 재등록
 
 ## 문제 해결
 
@@ -330,7 +344,7 @@ docker-compose up -d debezium-connect
 ```bash
 docker-compose down -v
 docker-compose up -d
-./setup-connectors.sh
+./scripts/debezium/setup-connectors.sh
 ```
 
 ### 서비스 재시작 (데이터 유지)
