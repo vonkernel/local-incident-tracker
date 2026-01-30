@@ -31,7 +31,8 @@ class KakaoGeocodingAdapter(
 
     override suspend fun geocodeByAddress(query: String): List<Location> =
         findCached(query)?.let { listOf(it) }
-            ?: (searchAddress(query)?.let { mapToLocations(it, query) } ?: emptyList())
+            ?: searchAddress(query)?.let { mapToLocations(it, query) }
+            ?: searchAddressBroader(query)
 
     override suspend fun geocodeByKeyword(query: String): List<Location> =
         findCached(query)?.let { listOf(it) }
@@ -47,6 +48,15 @@ class KakaoGeocodingAdapter(
         }?.also {
             log.debug("Address cache hit for: {}", query)
         }?.let(LocationMapper::toDomainModel)
+
+    private suspend fun searchAddressBroader(query: String): List<Location> {
+        val parts = query.split(" ")
+        if (parts.size < 2) return emptyList()
+
+        val broader = parts.dropLast(1).joinToString(" ")
+        log.debug("Address search fallback: '{}' -> '{}'", query, broader)
+        return searchAddress(broader)?.let { mapToLocations(it, query) } ?: emptyList()
+    }
 
     private suspend fun searchAddress(query: String): KakaoAddressDocument? =
         webClient.get()

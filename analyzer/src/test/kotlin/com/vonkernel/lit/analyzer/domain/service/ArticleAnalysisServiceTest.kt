@@ -120,14 +120,13 @@ class ArticleAnalysisServiceTest {
     }
 
     @Test
-    @DisplayName("LocationType.ADDRESS - geocodeByAddress 우선 호출, 빈 결과 시 geocodeByKeyword fallback")
-    fun analyze_addressType_fallbackToKeyword() = runTest {
+    @DisplayName("LocationType.ADDRESS - geocodeByAddress 빈 결과 시 unresolvedLocation 반환")
+    fun analyze_addressType_emptyResult_returnsUnresolved() = runTest {
         // Given
         val extracted = listOf(ExtractedLocation("강남역", LocationType.ADDRESS))
         setupDefaultAnalyzerMocks(extracted)
         coEvery { locationAnalyzer.analyze(testRefinedArticle.title, testRefinedArticle.content) } returns extracted
         coEvery { geocodingPort.geocodeByAddress("강남역") } returns emptyList()
-        coEvery { geocodingPort.geocodeByKeyword("강남역") } returns listOf(testLocation)
 
         val savedSlot = slot<AnalysisResult>()
         every { analysisResultRepository.save(capture(savedSlot)) } answers { firstArg() }
@@ -137,8 +136,13 @@ class ArticleAnalysisServiceTest {
 
         // Then
         coVerify(exactly = 1) { geocodingPort.geocodeByAddress("강남역") }
-        coVerify(exactly = 1) { geocodingPort.geocodeByKeyword("강남역") }
-        assertThat(savedSlot.captured.locations).containsExactly(testLocation)
+        coVerify(exactly = 0) { geocodingPort.geocodeByKeyword(any()) }
+
+        val locations = savedSlot.captured.locations
+        assertThat(locations).hasSize(1)
+        assertThat(locations[0].coordinate).isNull()
+        assertThat(locations[0].address.regionType).isEqualTo(RegionType.UNKNOWN)
+        assertThat(locations[0].address.addressName).isEqualTo("강남역")
     }
 
     @Test
