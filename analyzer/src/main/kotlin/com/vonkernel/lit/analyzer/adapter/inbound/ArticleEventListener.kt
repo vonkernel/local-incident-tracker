@@ -3,6 +3,7 @@ package com.vonkernel.lit.analyzer.adapter.inbound
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.vonkernel.lit.analyzer.adapter.inbound.model.DebeziumEnvelope
 import com.vonkernel.lit.analyzer.adapter.inbound.model.toArticle
+import com.vonkernel.lit.analyzer.domain.exception.ArticleAnalysisException
 import com.vonkernel.lit.analyzer.domain.service.ArticleAnalysisService
 import com.vonkernel.lit.core.util.executeWithRetry
 import kotlinx.coroutines.async
@@ -66,7 +67,12 @@ class ArticleEventListener(
                 article?.let { articleAnalysisService.analyze(it) }
             }
         }.onFailure { e ->
-            log.error("Failed to process article event at offset={}: {}", record.offset(), e.message, e)
+            when (e) {
+                is ArticleAnalysisException ->
+                    log.error("Failed to analyze article {} at offset={}: {}", e.articleId, record.offset(), e.message, e)
+                else ->
+                    log.error("Failed to process article event at offset={}: {}", record.offset(), e.message, e)
+            }
         }
     }
 }
