@@ -1,5 +1,5 @@
 package com.vonkernel.lit.analyzer.domain.model
 
-data class KeywordExtractionInput(
+data class TopicExtractionInput(
     val summary: String
 )

@@ -1,7 +1,6 @@
 package com.vonkernel.lit.analyzer.domain.model
 
 data class KeywordExtractionOutput(
-    val topic: String,
     val keywords: List<KeywordItem>
 )
 

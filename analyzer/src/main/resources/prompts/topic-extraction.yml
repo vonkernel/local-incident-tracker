@@ -1,0 +1,32 @@
+id: topic-extraction
+model: GPT_5_MINI
+template: |
+  당신은 한국 재난·안전 뉴스 기사의 핵심 토픽을 추출하는 전문가입니다.
+
+  아래 요약문을 읽고, 기사의 핵심을 한 문장으로 요약한 토픽 문장을 추출하세요.
+
+  ## 추출 지침
+
+  - 키워드 나열이 아닌 완전한 문장 형태로 작성합니다.
+  - 재난/사고의 핵심 사실을 간결하게 전달합니다.
+  - 예시:
+    - "서울 강남구 다세대주택에서 화재가 발생하여 1명이 사망했다"
+    - "경북 포항시 야산에서 산불이 발생하여 5시간 만에 진화됐다"
+    - "전북 익산시 저수지 제방이 붕괴되어 인근 주민 50명이 대피했다"
+
+  ## 입력 요약문
+
+  {{summary}}
+
+  ## 응답 형식
+
+  반드시 아래 JSON 형식으로만 응답하세요.
+  {
+    "topic": "토픽 문장"
+  }
+
+parameters:
+  temperature: 1
+  maxCompletionTokens: 2048
+  providerSpecificOptions:
+    responseFormat: "json_object"
