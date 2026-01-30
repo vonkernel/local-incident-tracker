@@ -74,7 +74,7 @@ class AnalysisResultRepositoryAdapter(
             val addressCode = location.address.code
             jpaAddressRepository.findByRegionTypeAndCode(regionCode, addressCode)
                 ?: jpaAddressRepository.save(LocationMapper.toPersistenceModel(location))
-        }
+        }.distinctBy { it.id }
 
     private fun createUrgencyMapping(urgencyTypeEntity: UrgencyTypeEntity) =
         UrgencyMappingEntity(urgencyType = urgencyTypeEntity)

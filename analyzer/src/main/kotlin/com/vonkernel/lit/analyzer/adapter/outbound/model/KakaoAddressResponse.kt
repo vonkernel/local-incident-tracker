@@ -56,17 +56,17 @@ data class KakaoAddress(
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class KakaoRoadAddress(
     @param:JsonProperty("address_name")
-    val addressName: String,
+    val addressName: String?,
 
     @param:JsonProperty("region_1depth_name")
-    val region1DepthName: String,
+    val region1DepthName: String?,
 
     @param:JsonProperty("region_2depth_name")
-    val region2DepthName: String,
+    val region2DepthName: String?,
 
     @param:JsonProperty("region_3depth_name")
-    val region3DepthName: String,
+    val region3DepthName: String?,
 
-    val x: String,
-    val y: String
+    val x: String?,
+    val y: String?
 )

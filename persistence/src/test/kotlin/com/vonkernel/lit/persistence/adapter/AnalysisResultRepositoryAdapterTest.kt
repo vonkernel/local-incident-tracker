@@ -1,5 +1,6 @@
 package com.vonkernel.lit.persistence.adapter
 
+import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.persistence.TestFixtures
 import com.vonkernel.lit.persistence.config.ObjectMapperConfig
 import com.vonkernel.lit.persistence.entity.core.IncidentTypeEntity
@@ -1707,6 +1708,48 @@ class AnalysisResultRepositoryAdapterTest {
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         assertThat(fromDb.incidentTypeMappings).hasSize(2)
+    }
+
+    @Test
+    @DisplayName("Part 10.5: 다중 location이 동일 address로 resolve될 때 중복 없이 저장된다")
+    fun edgeCase_duplicateAddressFromMultipleLocations() {
+        // Given: 서로 다른 location name이지만 같은 (regionType, code)로 resolve되는 경우
+        val article = jpaArticleRepository.save(
+            TestFixtures.createArticleEntity(articleId = "article-dup-address")
+        )
+        val analysisResult = TestFixtures.createAnalysisResult(
+            articleId = article.articleId,
+            urgency = TestFixtures.createUrgency("HIGH", 3),
+            locations = listOf(
+                TestFixtures.createLocation(
+                    address = TestFixtures.createAddress(
+                        regionType = RegionType.UNKNOWN,
+                        code = "UNKNOWN",
+                        addressName = "대전"
+                    )
+                ),
+                TestFixtures.createLocation(
+                    address = TestFixtures.createAddress(
+                        regionType = RegionType.UNKNOWN,
+                        code = "UNKNOWN",
+                        addressName = "세종"
+                    )
+                )
+            )
+        )
+
+        // When: 예외 없이 저장 성공
+        val saved = assertThatCode { adapter.save(analysisResult) }
+            .doesNotThrowAnyException()
+
+        // Then: address_mapping에 중복 없이 1개만 생성됨
+        val fromDb = jpaAnalysisResultRepository.findAll()[0]
+        assertThat(fromDb.addressMappings).hasSize(1)
+
+        // Then: Address는 1개만 존재
+        val allAddresses = jpaAddressRepository.findAll()
+        assertThat(allAddresses).hasSize(1)
+        assertThat(allAddresses[0].code).isEqualTo("UNKNOWN")
     }
 
     // ===== Part 11: existsByArticleId / deleteByArticleId 테스트 (4개) =====

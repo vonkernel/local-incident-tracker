@@ -37,9 +37,10 @@ class KakaoGeocodingAdapter(
     override suspend fun geocodeByKeyword(query: String): List<Location> =
         findCached(query)?.let { listOf(it) }
             ?: (searchKeyword(query)?.let { keywordDoc ->
-                searchAddress(keywordDoc.addressName)
+                keywordDoc.addressName
+                    ?.let { searchAddress(it) }
                     ?.let { mapToLocations(it, query) }
-                    ?: listOf(locationFromCoordinate(keywordDoc, query))
+                    ?: listOf(locationFromCoordinate(keywordDoc.x, keywordDoc.y, query))
             } ?: emptyList())
 
     private suspend fun findCached(query: String): Location? =
@@ -84,8 +85,9 @@ class KakaoGeocodingAdapter(
             ?.documents?.firstOrNull()
 
     private fun mapToLocations(document: KakaoAddressDocument, originalName: String): List<Location> {
-        val addr = document.address ?: return listOf(locationFromCoordinate(document, originalName))
-        val coordinate = Coordinate(lat = document.y.toDouble(), lon = document.x.toDouble())
+        val addr = document.address ?: return listOf(locationFromCoordinate(document.x, document.y, originalName))
+        val coordinate = parseCoordinate(document.x, document.y)
+            ?: return listOf(locationFromCoordinate(document.x, document.y, originalName))
 
         return buildList {
             if (addr.hCode.isNotBlank()) {
@@ -94,7 +96,7 @@ class KakaoGeocodingAdapter(
                 add(buildLocation(coordinate, RegionType.BJDONG, addr.bCode, originalName, addr, addr.region3DepthName))
             }
             if (isEmpty()) {
-                add(locationFromCoordinate(document, originalName))
+                add(locationFromCoordinate(document.x, document.y, originalName))
             }
         }
     }
@@ -119,15 +121,15 @@ class KakaoGeocodingAdapter(
             )
         )
 
-    private fun locationFromCoordinate(doc: KakaoAddressDocument, originalName: String): Location =
-        Location(
-            coordinate = Coordinate(lat = doc.y.toDouble(), lon = doc.x.toDouble()),
-            address = Address(regionType = RegionType.UNKNOWN, code = "UNKNOWN", addressName = originalName)
-        )
+    private fun parseCoordinate(x: String?, y: String?): Coordinate? {
+        val lon = x?.toDoubleOrNull() ?: return null
+        val lat = y?.toDoubleOrNull() ?: return null
+        return Coordinate(lat = lat, lon = lon)
+    }
 
-    private fun locationFromCoordinate(doc: KakaoKeywordDocument, originalName: String): Location =
+    private fun locationFromCoordinate(x: String?, y: String?, originalName: String): Location =
         Location(
-            coordinate = Coordinate(lat = doc.y.toDouble(), lon = doc.x.toDouble()),
+            coordinate = parseCoordinate(x, y),
             address = Address(regionType = RegionType.UNKNOWN, code = "UNKNOWN", addressName = originalName)
         )
 }

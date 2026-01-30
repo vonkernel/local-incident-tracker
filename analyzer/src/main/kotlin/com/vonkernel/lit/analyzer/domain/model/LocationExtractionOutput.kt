@@ -1,7 +1,7 @@
 package com.vonkernel.lit.analyzer.domain.model
 
 data class LocationExtractionOutput(
-    val location: ExtractedLocation
+    val locations: List<ExtractedLocation>
 )
 
 data class ExtractedLocation(
