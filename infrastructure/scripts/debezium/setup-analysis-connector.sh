@@ -1,9 +1,9 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-set -a; source "$SCRIPT_DIR/.env"; set +a
+set -a; source "$SCRIPT_DIR/../../.env"; set +a
 
-CONNECTOR_FILE="$SCRIPT_DIR/debezium/connectors/lit-articles-connector.json"
+CONNECTOR_FILE="$SCRIPT_DIR/../../debezium/connectors/lit-analysis-connector.json"
 DEBEZIUM_URL="http://localhost:${DEBEZIUM_PORT}"
 CONNECTOR_NAME=$(jq -r '.name' "$CONNECTOR_FILE")
 
