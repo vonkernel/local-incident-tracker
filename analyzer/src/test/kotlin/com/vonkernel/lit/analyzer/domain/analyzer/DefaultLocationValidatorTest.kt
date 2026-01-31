@@ -4,10 +4,11 @@ import com.vonkernel.lit.ai.application.PromptOrchestrator
 import com.vonkernel.lit.ai.domain.model.ExecutionMetadata
 import com.vonkernel.lit.ai.domain.model.PromptExecutionResult
 import com.vonkernel.lit.ai.domain.model.TokenUsage
-import com.vonkernel.lit.analyzer.domain.model.ExtractedLocation
-import com.vonkernel.lit.analyzer.domain.model.LocationExtractionOutput
-import com.vonkernel.lit.analyzer.domain.model.LocationType
-import com.vonkernel.lit.analyzer.domain.model.LocationValidationInput
+import com.vonkernel.lit.analyzer.adapter.outbound.analyzer.DefaultLocationValidator
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.ExtractedLocation
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.LocationExtractionOutput
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.LocationType
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.LocationValidationInput
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk

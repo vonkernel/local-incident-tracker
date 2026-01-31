@@ -1,10 +1,10 @@
 package com.vonkernel.lit.analyzer.domain.service
 
-import com.vonkernel.lit.analyzer.domain.analyzer.LocationAnalyzer
-import com.vonkernel.lit.analyzer.domain.analyzer.LocationValidator
-import com.vonkernel.lit.analyzer.domain.model.ExtractedLocation
-import com.vonkernel.lit.analyzer.domain.model.LocationType
-import com.vonkernel.lit.analyzer.domain.port.GeocodingPort
+import com.vonkernel.lit.analyzer.domain.port.analyzer.LocationAnalyzer
+import com.vonkernel.lit.analyzer.domain.port.analyzer.LocationValidator
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.ExtractedLocation
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.LocationType
+import com.vonkernel.lit.analyzer.domain.port.geocoding.GeocodingPort
 import com.vonkernel.lit.core.entity.Address
 import com.vonkernel.lit.core.entity.Coordinate
 import com.vonkernel.lit.core.entity.Location

@@ -4,9 +4,10 @@ import com.vonkernel.lit.ai.application.PromptOrchestrator
 import com.vonkernel.lit.ai.domain.model.ExecutionMetadata
 import com.vonkernel.lit.ai.domain.model.PromptExecutionResult
 import com.vonkernel.lit.ai.domain.model.TokenUsage
-import com.vonkernel.lit.analyzer.domain.model.IncidentTypeClassificationInput
-import com.vonkernel.lit.analyzer.domain.model.IncidentTypeClassificationOutput
-import com.vonkernel.lit.analyzer.domain.model.IncidentTypeItem
+import com.vonkernel.lit.analyzer.adapter.outbound.analyzer.DefaultIncidentTypeAnalyzer
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeClassificationInput
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeClassificationOutput
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeItem
 import com.vonkernel.lit.core.entity.IncidentType
 import com.vonkernel.lit.core.repository.IncidentTypeRepository
 import io.mockk.coEvery

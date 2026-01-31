@@ -1,11 +1,11 @@
 package com.vonkernel.lit.analyzer.domain.service
 
 import com.vonkernel.lit.analyzer.domain.exception.ArticleAnalysisException
-import com.vonkernel.lit.analyzer.domain.analyzer.IncidentTypeAnalyzer
-import com.vonkernel.lit.analyzer.domain.analyzer.KeywordAnalyzer
-import com.vonkernel.lit.analyzer.domain.analyzer.RefineArticleAnalyzer
-import com.vonkernel.lit.analyzer.domain.analyzer.TopicAnalyzer
-import com.vonkernel.lit.analyzer.domain.analyzer.UrgencyAnalyzer
+import com.vonkernel.lit.analyzer.domain.port.analyzer.IncidentTypeAnalyzer
+import com.vonkernel.lit.analyzer.domain.port.analyzer.KeywordAnalyzer
+import com.vonkernel.lit.analyzer.domain.port.analyzer.RefineArticleAnalyzer
+import com.vonkernel.lit.analyzer.domain.port.analyzer.TopicAnalyzer
+import com.vonkernel.lit.analyzer.domain.port.analyzer.UrgencyAnalyzer
 import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.core.repository.AnalysisResultRepository
