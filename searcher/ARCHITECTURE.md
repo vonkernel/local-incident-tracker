@@ -511,13 +511,11 @@ searcher/src/main/kotlin/com/vonkernel/lit/searcher/
 ├── SearcherApplication.kt
 ├── adapter/
 │   ├── inbound/
-│   │   └── web/
+│   │   └── http/
 │   │       ├── ArticleSearchController.kt          # REST Controller
 │   │       ├── dto/
 │   │       │   ├── SearchRequest.kt                 # 검색 요청 DTO
 │   │       │   └── SearchResponse.kt                # 검색 응답 DTO
-│   │       └── config/
-│   │           └── WebConfig.kt                     # Spring MVC 설정 (필요 시)
 │   └── outbound/
 │       ├── embedding/
 │       │   └── EmbeddingAdapter.kt                  # Embedder 구현체
@@ -545,7 +543,7 @@ searcher/src/main/resources/
 searcher/src/test/kotlin/com/vonkernel/lit/searcher/
 ├── adapter/
 │   ├── inbound/
-│   │   └── web/
+│   │   └── http/
 │   │       └── ArticleSearchControllerTest.kt       # REST 엔드포인트 테스트
 │   └── outbound/
 │       └── opensearch/
@@ -590,7 +588,7 @@ spring:
     name: searcher
 
 server:
-  port: 8085
+  port: 8080
 
 opensearch:
   host: ${OPENSEARCH_HOST:localhost}
@@ -608,7 +606,7 @@ opensearch:
 searcher/src/test/kotlin/com/vonkernel/lit/searcher/
 ├── adapter/
 │   ├── inbound/
-│   │   └── web/
+│   │   └── http/
 │   │       └── ArticleSearchControllerTest.kt
 │   └── outbound/
 │       └── opensearch/

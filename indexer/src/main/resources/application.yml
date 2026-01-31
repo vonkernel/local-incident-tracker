@@ -16,7 +16,7 @@ spring:
       type: batch
 
 server:
-  port: 8084
+  port: 8083
 
 kafka:
   topic:
