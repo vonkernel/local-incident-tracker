@@ -121,4 +121,48 @@ class OpenAiEmbeddingExecutorTest {
             }
         }
     }
+
+    @Test
+    fun `embedAll로 여러 텍스트 배치 임베딩 반환`() = runBlocking {
+        // Given
+        val vector1 = floatArrayOf(0.1f, 0.2f)
+        val vector2 = floatArrayOf(0.3f, 0.4f)
+        val mockResponse = EmbeddingResponse(
+            listOf(Embedding(vector1, 0), Embedding(vector2, 1))
+        )
+        `when`(mockEmbeddingModel.call(any(EmbeddingRequest::class.java)))
+            .thenReturn(mockResponse)
+
+        // When
+        val results = executor.embedAll(
+            texts = listOf("텍스트1", "텍스트2"),
+            model = EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
+            dimensions = 2
+        )
+
+        // Then
+        assertTrue(results.size == 2)
+        assertArrayEquals(vector1, results[0])
+        assertArrayEquals(vector2, results[1])
+    }
+
+    @Test
+    fun `embedAll 결과 수 불일치 시 LlmApiException 발생`() = runBlocking {
+        // Given
+        val mockResponse = EmbeddingResponse(
+            listOf(Embedding(floatArrayOf(0.1f), 0))
+        )
+        `when`(mockEmbeddingModel.call(any(EmbeddingRequest::class.java)))
+            .thenReturn(mockResponse)
+
+        // When & Then
+        val exception = assertThrows<LlmApiException> {
+            executor.embedAll(
+                texts = listOf("텍스트1", "텍스트2"),
+                model = EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
+                dimensions = 1
+            )
+        }
+        assertTrue(exception.message!!.contains("Expected 2"))
+    }
 }

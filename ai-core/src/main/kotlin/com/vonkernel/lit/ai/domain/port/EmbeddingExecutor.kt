@@ -30,4 +30,15 @@ interface EmbeddingExecutor {
      * @throws com.vonkernel.lit.ai.domain.exception.LlmExecutionException 실행 실패 시
      */
     suspend fun embed(text: String, model: EmbeddingModel, dimensions: Int): FloatArray
+
+    /**
+     * 여러 텍스트를 한 번의 API 호출로 임베딩 벡터로 변환
+     *
+     * @param texts 임베딩할 텍스트 목록
+     * @param model 사용할 임베딩 모델
+     * @param dimensions 출력 벡터 차원 수
+     * @return 임베딩 벡터 목록 (입력 순서와 동일)
+     * @throws com.vonkernel.lit.ai.domain.exception.LlmExecutionException 실행 실패 시
+     */
+    suspend fun embedAll(texts: List<String>, model: EmbeddingModel, dimensions: Int): List<FloatArray>
 }

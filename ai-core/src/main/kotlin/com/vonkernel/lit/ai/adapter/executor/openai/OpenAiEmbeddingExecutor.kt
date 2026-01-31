@@ -67,6 +67,45 @@ class OpenAiEmbeddingExecutor(
         )
     }
 
+    override suspend fun embedAll(
+        texts: List<String>,
+        model: EmbeddingModel,
+        dimensions: Int
+    ): List<FloatArray> = withContext(Dispatchers.IO) {
+        runCatching {
+            withTimeout(60_000L) {
+                embeddingModel.call(
+                    EmbeddingRequest(
+                        texts,
+                        OpenAiEmbeddingOptions.builder()
+                            .model(model.modelId)
+                            .dimensions(dimensions)
+                            .build()
+                    )
+                )
+            }
+        }.fold(
+            onSuccess = { response ->
+                val results = response.results
+                if (results.size != texts.size) {
+                    throw LlmApiException(
+                        statusCode = null,
+                        errorBody = null,
+                        message = "Expected ${texts.size} embeddings but got ${results.size}"
+                    )
+                }
+                results.map { it.output }
+            },
+            onFailure = { e ->
+                when (e) {
+                    is AiCoreException -> throw e
+                    is TimeoutCancellationException -> throw LlmTimeoutException(timeoutMs = 60_000L)
+                    else -> handleException(e)
+                }
+            }
+        )
+    }
+
     /**
      * 예외 처리 및 Domain Exception으로 변환
      */

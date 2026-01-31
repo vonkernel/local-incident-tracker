@@ -229,9 +229,10 @@ LLM 프롬프트 실행을 추상화하는 인터페이스로, Provider별 구�
 
 **주요 메서드**:
 - `supports(provider: LlmProvider)`: 지원 여부 확인
-- `suspend fun embed(text, model, dimensions)`: 텍스트를 임베딩 벡터(FloatArray)로 변환
+- `suspend fun embed(text, model, dimensions)`: 단건 텍스트를 임베딩 벡터(FloatArray)로 변환
+- `suspend fun embedAll(texts, model, dimensions)`: 여러 텍스트를 한 번의 API 호출로 배치 임베딩 (List<FloatArray> 반환)
 
-**구현체**: `OpenAiEmbeddingExecutor` (Spring AI 기반 OpenAI Embedding 호출)
+**구현체**: `OpenAiEmbeddingExecutor` (Spring AI 기반 OpenAI Embedding 호출, 단건/배치 모두 지원)
 
 #### PromptLoader (Port)
 
@@ -438,16 +439,26 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 
 ### 5. 텍스트 임베딩
 
-`EmbeddingExecutor`를 직접 주입받아 텍스트를 벡터로 변환합니다. 프롬프트 실행과 달리 Orchestrator 없이 Port를 직접 사용합니다.
+`EmbeddingExecutor`를 직접 주입받아 텍스트를 벡터로 변환합니다. 프롬프트 실행과 달리 Orchestrator 없이 Port를 직접 사용합니다. 단건(`embed`)과 배치(`embedAll`) 모두 지원합니다.
 
 ```kotlin
 @Service
 class ArticleEmbedder(
     private val embeddingExecutor: EmbeddingExecutor
 ) {
+    // 단건 임베딩
     suspend fun generateEmbedding(text: String): FloatArray {
         return embeddingExecutor.embed(
             text = text,
+            model = EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
+            dimensions = 128
+        )
+    }
+
+    // 배치 임베딩 (한 번의 API 호출로 여러 텍스트 처리)
+    suspend fun generateEmbeddings(texts: List<String>): List<FloatArray> {
+        return embeddingExecutor.embedAll(
+            texts = texts,
             model = EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
             dimensions = 128
         )
