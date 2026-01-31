@@ -149,12 +149,15 @@ ArticleIndexDocument (shared, OpenSearch)
 ```
 Analyzer receives Article event
   ↓
-Concurrent LLM analysis tasks:
-  ├─ disaster_type_analysis (INSERT)
-  ├─ location_analysis (INSERT)
-  ├─ urgency_analysis (INSERT)
-  ├─ keywords_analysis (INSERT)
-  └─ ... other analyses ...
+Phase 1: Article Refinement (sequential LLM call)
+  └─ ArticleRefiner → RefinedArticle (title, content, summary, writtenAt)
+  ↓
+Phase 2: Parallel extraction (coroutine async):
+  ├─ IncidentTypeExtractor (LLM + DB reference data)
+  ├─ UrgencyExtractor (LLM + DB reference data)
+  ├─ LocationsExtractor (LLM → validate → Kakao geocoding)
+  ├─ KeywordsExtractor (LLM)
+  └─ TopicExtractor (LLM)
   ↓
 BEGIN TRANSACTION
   └─ INSERT AnalysisResult (aggregate all results)
@@ -182,11 +185,21 @@ Indexer consumes event → builds search document
 ## Module Breakdown
 
 ### `shared`
-**Purpose**: Shared data contracts between all services
+**Purpose**: Shared domain models and repository port interfaces
 **Exports**:
-- `Article`: Normalized incident article
-- `AnalysisResult`: Enriched incident analysis
-- `ArticleIndexDocument`: Search-optimized document
+- Domain entities: `Article`, `AnalysisResult`, `ArticleIndexDocument`, `Location`, `Address`, `IncidentType`, `Urgency`, `Keyword`, `Topic`, etc.
+- Repository ports: `ArticleRepository`, `AnalysisResultRepository`, `IncidentTypeRepository`, `UrgencyRepository`
+
+### `persistence`
+**Purpose**: JPA-based repository adapter implementations
+**Implements**: Repository ports defined in `shared`
+**Contains**: JPA entities, mappers (domain ↔ entity), Spring Data JPA repositories, adapter classes
+
+### `ai-core`
+**Purpose**: LLM API abstraction layer (prompt management + execution)
+**Ports**: `PromptExecutor`, `PromptLoader`
+**Adapters**: `OpenAiPromptExecutor` (OpenAI API), `YamlPromptLoader` (YAML-based prompt templates)
+**Services**: `PromptOrchestrator` (prompt loading → template resolution → LLM execution)
 
 ### `collector`
 **Input**: Yonhapnews API
@@ -198,20 +211,20 @@ Indexer consumes event → builds search document
 **Input**: Article events from Kafka
 **Output**: AnalysisResult → PostgreSQL (serves as outbox)
 
-**Analysis Pipeline** (LLM-driven):
-1. **LLM Analysis** (parallel tasks):
-   - Disaster type classification → `disaster_type_analysis` table
-   - Location extraction & entity linking → `location_analysis` table
-   - Urgency/severity assessment → `urgency_analysis` table
-   - Keyword extraction & tagging → `keywords_analysis` table
-   - (Additional analyses as needed) → respective tables
+**Analysis Pipeline** (2-phase architecture):
 
-2. **Geocoding** (external API):
-   - Kakao API: Convert extracted locations → geographic coordinates
-   - Results stored separately for geo-spatial search
+1. **Phase 1 - Article Refinement** (sequential):
+   - `ArticleRefiner`: Refines raw article via LLM → produces `RefinedArticle` (title, content, summary, writtenAt)
+
+2. **Phase 2 - Parallel Analysis** (5 extractors via coroutine async):
+   - `IncidentTypeExtractor`: Classifies incident types using LLM + reference data from DB
+   - `UrgencyExtractor`: Assesses urgency level using LLM + reference data from DB
+   - `LocationsExtractor`: Extracts locations via LLM → validates → geocodes via Kakao API
+   - `KeywordsExtractor`: Extracts keywords from refined summary via LLM
+   - `TopicExtractor`: Extracts topic from refined summary via LLM
 
 3. **Aggregate & Commit**:
-   - All individual analysis results + geocoding combined into single AnalysisResult
+   - All extraction results combined into single `AnalysisResult`
    - Single transaction: AnalysisResult INSERT triggers Debezium CDC event
    - Kafka publishes AnalysisEvent for indexer consumption
 

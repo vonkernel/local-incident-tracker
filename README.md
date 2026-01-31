@@ -195,13 +195,12 @@ OpenSearch에서 효율적인 검색과 필터링을 위해 최적화된 구조�
 
 ## 서브모듈
 
-### shared (공유 데이터 모델)
-모든 서비스에서 공통으로 사용하는 POJO 데이터 모델을 정의합니다. 각 서비스는 이 모듈에 의존하여 타입 안전성과 일관성을 보장받습니다.
+### shared (공유 데이터 모델 및 포트)
+모든 서비스에서 공통으로 사용하는 도메인 모델과 repository 포트 인터페이스를 정의합니다. 각 서비스는 이 모듈에 의존하여 타입 안전성과 일관성을 보장받습니다.
 
 정의되는 클래스:
-- **Article**: 원본 기사 데이터 (Collector → RDBMS → Analyzer)
-- **AnalysisResult**: 분석 결과 데이터 (Analyzer → RDBMS → Indexer)
-- **ArticleIndexDocument**: 검색 인덱스 최적화 문서 (Indexer → OpenSearch ← Searcher)
+- **도메인 모델**: `Article`, `AnalysisResult`, `ArticleIndexDocument`, `Location`, `Address`, `IncidentType`, `Urgency`, `Keyword`, `Topic` 등
+- **Repository 포트**: `ArticleRepository`, `AnalysisResultRepository`, `IncidentTypeRepository`, `UrgencyRepository`
 
 ### ai-core (LLM 프롬프트 실행 라이브러리)
 Spring AI 기반의 타입 안전한 LLM 프롬프트 관리 및 실행 엔진을 제공하는 독립 라이브러리 모듈입니다. analyzer 서비스가 AI 기반 분석을 수행하는데 사용합니다.

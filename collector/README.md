@@ -102,7 +102,7 @@ collector는 **Hexagonal Architecture (Ports & Adapters)** 패턴을 따르며, 
 ┌───────────────────────────────────────────┐
 │ Adapter Layer (OOP - Spring Beans)        │
 │ - SafetyDataApiAdapter (HTTP Client)      │
-│ - ArticleRepositoryImpl (PostgreSQL)      │
+│ - ArticleRepositoryAdapter (PostgreSQL)   │
 │ - CollectorScheduler (periodic)           │
 │ - CollectorController (REST API)          │
 │ - External API Models:                    │
@@ -113,7 +113,7 @@ collector는 **Hexagonal Architecture (Ports & Adapters)** 패턴을 따르며, 
                ↓
 ┌───────────────────────────────────────────┐
 │ Port Interfaces (Contracts)               │
-│ - NewsApiPort: external API contract      │
+│ - NewsFetcher: external API contract      │
 │ - ArticleRepository: persistence (shared) │
 └──────────────┬────────────────────────────┘
                ↓
@@ -179,11 +179,11 @@ fun Article.validate(): Result<Article>
 
 ### 2. Port Interfaces
 
-#### `NewsApiPort`
+#### `NewsFetcher`
 **정의**: collector 모듈
 
 ```kotlin
-interface NewsApiPort {
+interface NewsFetcher {
     suspend fun fetchArticles(
         inqDt: String,
         pageNo: Int,
