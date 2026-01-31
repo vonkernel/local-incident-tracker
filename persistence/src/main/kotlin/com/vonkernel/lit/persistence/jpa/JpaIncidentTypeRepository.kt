@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.jpa
 
-import com.vonkernel.lit.persistence.entity.core.IncidentTypeEntity
+import com.vonkernel.lit.persistence.jpa.entity.article.IncidentTypeEntity
 import org.springframework.data.jpa.repository.JpaRepository
 
 interface JpaIncidentTypeRepository : JpaRepository<IncidentTypeEntity, Long> {

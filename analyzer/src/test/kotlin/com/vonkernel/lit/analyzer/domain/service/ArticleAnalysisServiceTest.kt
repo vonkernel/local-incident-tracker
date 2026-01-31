@@ -16,7 +16,7 @@ import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.core.entity.RefinedArticle
 import com.vonkernel.lit.core.entity.Topic
 import com.vonkernel.lit.core.entity.Urgency
-import com.vonkernel.lit.core.repository.AnalysisResultRepository
+import com.vonkernel.lit.core.port.repository.AnalysisResultRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -37,7 +37,7 @@ class ArticleAnalysisServiceTest {
     private val urgencyAnalyzer: UrgencyAnalyzer = mockk()
     private val keywordAnalyzer: KeywordAnalyzer = mockk()
     private val topicAnalyzer: TopicAnalyzer = mockk()
-    private val locationAnalysisService: LocationAnalysisService = mockk()
+    private val locationsExtractor: LocationsExtractor = mockk()
     private val analysisResultRepository: AnalysisResultRepository = mockk()
 
     private lateinit var service: ArticleAnalysisService
@@ -72,7 +72,7 @@ class ArticleAnalysisServiceTest {
     fun setUp() {
         service = ArticleAnalysisService(
             refineArticleAnalyzer, incidentTypeAnalyzer, urgencyAnalyzer,
-            keywordAnalyzer, topicAnalyzer, locationAnalysisService,
+            keywordAnalyzer, topicAnalyzer, locationsExtractor,
             analysisResultRepository
         )
     }
@@ -83,7 +83,7 @@ class ArticleAnalysisServiceTest {
         coEvery { urgencyAnalyzer.analyze(testRefinedArticle.title, testRefinedArticle.content) } returns testUrgency
         coEvery { keywordAnalyzer.analyze(testRefinedArticle.summary) } returns testKeywords
         coEvery { topicAnalyzer.analyze(testRefinedArticle.summary) } returns testTopic
-        coEvery { locationAnalysisService.analyze(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns locations
+        coEvery { locationsExtractor.process(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns locations
         every { analysisResultRepository.existsByArticleId(testArticle.articleId) } returns false
         every { analysisResultRepository.save(any()) } answers { firstArg() }
     }

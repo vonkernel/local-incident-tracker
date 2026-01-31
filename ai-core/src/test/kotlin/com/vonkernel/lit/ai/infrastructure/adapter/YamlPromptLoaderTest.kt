@@ -1,5 +1,6 @@
 package com.vonkernel.lit.ai.infrastructure.adapter
 
+import com.vonkernel.lit.ai.adapter.prompt.YamlPromptLoader
 import com.vonkernel.lit.ai.domain.exception.PromptLoadException
 import com.vonkernel.lit.ai.domain.model.LlmModel
 import com.vonkernel.lit.ai.domain.model.SummarizeInput

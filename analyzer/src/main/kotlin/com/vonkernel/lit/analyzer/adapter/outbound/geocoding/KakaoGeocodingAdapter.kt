@@ -5,13 +5,13 @@ import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoAddressD
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoAddressResponse
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordDocument
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordResponse
-import com.vonkernel.lit.analyzer.domain.port.geocoding.GeocodingPort
+import com.vonkernel.lit.analyzer.domain.port.geocoding.Geocoder
 import com.vonkernel.lit.core.entity.Address
 import com.vonkernel.lit.core.entity.Coordinate
 import com.vonkernel.lit.core.entity.Location
 import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.persistence.jpa.JpaAddressRepository
-import com.vonkernel.lit.persistence.mapper.LocationMapper
+import com.vonkernel.lit.persistence.jpa.mapper.LocationMapper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.coroutines.withContext
@@ -25,7 +25,7 @@ import org.springframework.web.reactive.function.client.bodyToMono
 class KakaoGeocodingAdapter(
     @param:Qualifier("kakaoWebClient") private val webClient: WebClient,
     private val jpaAddressRepository: JpaAddressRepository
-) : GeocodingPort {
+) : Geocoder {
 
     private val log = LoggerFactory.getLogger(javaClass)
 

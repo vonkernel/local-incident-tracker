@@ -2,6 +2,7 @@ package com.vonkernel.lit.persistence.mapper
 
 import com.vonkernel.lit.core.entity.Keyword
 import com.vonkernel.lit.persistence.TestFixtures
+import com.vonkernel.lit.persistence.jpa.mapper.KeywordMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test

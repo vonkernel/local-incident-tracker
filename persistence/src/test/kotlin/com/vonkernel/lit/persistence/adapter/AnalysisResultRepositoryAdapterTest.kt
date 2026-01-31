@@ -2,11 +2,11 @@ package com.vonkernel.lit.persistence.adapter
 
 import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.persistence.TestFixtures
-import com.vonkernel.lit.persistence.config.ObjectMapperConfig
-import com.vonkernel.lit.persistence.entity.core.IncidentTypeEntity
-import com.vonkernel.lit.persistence.entity.core.UrgencyTypeEntity
+import com.vonkernel.lit.persistence.jpa.config.ObjectMapperConfig
+import com.vonkernel.lit.persistence.jpa.entity.article.IncidentTypeEntity
+import com.vonkernel.lit.persistence.jpa.entity.article.UrgencyTypeEntity
 import com.vonkernel.lit.persistence.jpa.*
-import com.vonkernel.lit.persistence.mapper.AnalysisResultOutboxMapper
+import com.vonkernel.lit.persistence.jpa.mapper.AnalysisResultOutboxMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy

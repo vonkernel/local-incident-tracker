@@ -7,7 +7,7 @@ import com.vonkernel.lit.ai.domain.model.Prompt
 import com.vonkernel.lit.ai.domain.model.PromptParameters
 import com.vonkernel.lit.ai.domain.model.SummarizeInput
 import com.vonkernel.lit.ai.domain.model.SummarizeOutput
-import com.vonkernel.lit.ai.infrastructure.adapter.openai.OpenAiPromptExecutor
+import com.vonkernel.lit.ai.adapter.executor.openai.OpenAiPromptExecutor
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull

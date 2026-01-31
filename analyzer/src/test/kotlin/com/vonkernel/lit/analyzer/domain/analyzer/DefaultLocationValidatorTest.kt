@@ -1,6 +1,6 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
-import com.vonkernel.lit.ai.application.PromptOrchestrator
+import com.vonkernel.lit.ai.domain.service.PromptOrchestrator
 import com.vonkernel.lit.ai.domain.model.ExecutionMetadata
 import com.vonkernel.lit.ai.domain.model.PromptExecutionResult
 import com.vonkernel.lit.ai.domain.model.TokenUsage

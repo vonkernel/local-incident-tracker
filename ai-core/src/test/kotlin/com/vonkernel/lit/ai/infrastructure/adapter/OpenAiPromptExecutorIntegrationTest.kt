@@ -5,7 +5,7 @@ import com.vonkernel.lit.ai.domain.model.Prompt
 import com.vonkernel.lit.ai.domain.model.PromptParameters
 import com.vonkernel.lit.ai.domain.model.SummarizeInput
 import com.vonkernel.lit.ai.domain.model.SummarizeOutput
-import com.vonkernel.lit.ai.infrastructure.adapter.openai.OpenAiPromptExecutor
+import com.vonkernel.lit.ai.adapter.executor.openai.OpenAiPromptExecutor
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.test.context.TestPropertySource
 
 /**
  * OpenAiPromptExecutor 통합 테스트 (실제 OpenAI API 호출)

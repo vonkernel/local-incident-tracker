@@ -1,6 +1,6 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
-import com.vonkernel.lit.ai.application.PromptOrchestrator
+import com.vonkernel.lit.ai.domain.service.PromptOrchestrator
 import com.vonkernel.lit.ai.domain.model.ExecutionMetadata
 import com.vonkernel.lit.ai.domain.model.PromptExecutionResult
 import com.vonkernel.lit.ai.domain.model.TokenUsage
@@ -9,7 +9,7 @@ import com.vonkernel.lit.analyzer.domain.port.analyzer.model.UrgencyAssessmentIn
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.UrgencyAssessmentOutput
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.UrgencyItem
 import com.vonkernel.lit.core.entity.Urgency
-import com.vonkernel.lit.core.repository.UrgencyRepository
+import com.vonkernel.lit.core.port.repository.UrgencyRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk

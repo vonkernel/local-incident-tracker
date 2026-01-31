@@ -1,7 +1,7 @@
 package com.vonkernel.lit.collector.fake
 
 import com.vonkernel.lit.core.entity.Article
-import com.vonkernel.lit.core.repository.ArticleRepository
+import com.vonkernel.lit.core.port.repository.ArticleRepository
 import java.util.concurrent.ConcurrentHashMap
 
 /**

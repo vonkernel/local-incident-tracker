@@ -2,9 +2,9 @@ package com.vonkernel.lit.collector.domain.service
 
 import com.vonkernel.lit.collector.domain.exception.CollectionException
 import com.vonkernel.lit.collector.domain.model.ArticlePage
-import com.vonkernel.lit.collector.domain.port.NewsApiPort
+import com.vonkernel.lit.collector.domain.port.NewsFetcher
 import com.vonkernel.lit.core.entity.Article
-import com.vonkernel.lit.core.repository.ArticleRepository
+import com.vonkernel.lit.core.port.repository.ArticleRepository
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
@@ -18,15 +18,15 @@ import java.time.LocalDate
 
 class ArticleCollectionServiceImplTest {
 
-    private lateinit var newsApiPort: NewsApiPort
+    private lateinit var newsFetcher: NewsFetcher
     private lateinit var articleRepository: ArticleRepository
     private lateinit var service: ArticleCollectionServiceImpl
 
     @BeforeEach
     fun setUp() {
-        newsApiPort = mockk()
+        newsFetcher = mockk()
         articleRepository = mockk()
-        service = ArticleCollectionServiceImpl(newsApiPort, articleRepository)
+        service = ArticleCollectionServiceImpl(newsFetcher, articleRepository)
     }
 
     @AfterEach
@@ -82,7 +82,7 @@ class ArticleCollectionServiceImplTest {
         val page = createArticlePage(articles, totalCount = 2, pageNo = 1)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page
         every { articleRepository.filterNonExisting(any()) } answers { firstArg<List<String>>() }
         every { articleRepository.saveAll(any()) } answers { firstArg<List<Article>>() }
 
@@ -90,7 +90,7 @@ class ArticleCollectionServiceImplTest {
         service.collectArticlesForDate(date, pageSize)
 
         // Then
-        coVerify(exactly = 1) { newsApiPort.fetchArticles("20240115", 1, 2) }
+        coVerify(exactly = 1) { newsFetcher.fetchArticles("20240115", 1, 2) }
         verify(exactly = 1) { articleRepository.saveAll(articles) }
     }
 
@@ -104,8 +104,8 @@ class ArticleCollectionServiceImplTest {
         val page2 = createArticlePage(page2Articles, totalCount = 4, pageNo = 2)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page1
-        coEvery { newsApiPort.fetchArticles("20240115", 2, pageSize) } returns page2
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page1
+        coEvery { newsFetcher.fetchArticles("20240115", 2, pageSize) } returns page2
         every { articleRepository.filterNonExisting(any()) } answers {
             firstArg<List<String>>()
         }
@@ -115,8 +115,8 @@ class ArticleCollectionServiceImplTest {
         service.collectArticlesForDate(date, pageSize)
 
         // Then
-        coVerify(exactly = 1) { newsApiPort.fetchArticles("20240115", 1, 2) }
-        coVerify(exactly = 1) { newsApiPort.fetchArticles("20240115", 2, 2) }
+        coVerify(exactly = 1) { newsFetcher.fetchArticles("20240115", 1, 2) }
+        coVerify(exactly = 1) { newsFetcher.fetchArticles("20240115", 2, 2) }
         verify(exactly = 1) { articleRepository.saveAll(page1Articles) }
         verify(exactly = 1) { articleRepository.saveAll(page2Articles) }
     }
@@ -131,7 +131,7 @@ class ArticleCollectionServiceImplTest {
         val page = createArticlePage(articles, totalCount = 2, pageNo = 1)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page
         every { articleRepository.filterNonExisting(listOf("1")) } returns listOf("1")
         every { articleRepository.saveAll(any()) } answers { firstArg<List<Article>>() }
 
@@ -150,7 +150,7 @@ class ArticleCollectionServiceImplTest {
         val page = createArticlePage(articles, totalCount = 2, pageNo = 1)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page
         every { articleRepository.filterNonExisting(listOf("1", "2")) } returns listOf("2") // Only "2" is new
         every { articleRepository.saveAll(any()) } answers { firstArg<List<Article>>() }
 
@@ -169,7 +169,7 @@ class ArticleCollectionServiceImplTest {
         val page = createArticlePage(articles, totalCount = 2, pageNo = 1)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page
         every { articleRepository.filterNonExisting(listOf("1", "2")) } returns emptyList() // All exist
 
         // When
@@ -189,8 +189,8 @@ class ArticleCollectionServiceImplTest {
         val page2 = createArticlePage(page2Articles, totalCount = 4, pageNo = 2)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page1
-        coEvery { newsApiPort.fetchArticles("20240115", 2, pageSize) } throws RuntimeException("Network error") andThen page2
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page1
+        coEvery { newsFetcher.fetchArticles("20240115", 2, pageSize) } throws RuntimeException("Network error") andThen page2
         every { articleRepository.filterNonExisting(any()) } answers { firstArg<List<String>>() }
         every { articleRepository.saveAll(any()) } answers { firstArg<List<Article>>() }
 
@@ -198,7 +198,7 @@ class ArticleCollectionServiceImplTest {
         service.collectArticlesForDate(date, pageSize)
 
         // Then
-        coVerify(exactly = 2) { newsApiPort.fetchArticles("20240115", 2, pageSize) } // Initial + retry
+        coVerify(exactly = 2) { newsFetcher.fetchArticles("20240115", 2, pageSize) } // Initial + retry
         verify(exactly = 1) { articleRepository.saveAll(page1Articles) }
         verify(exactly = 1) { articleRepository.saveAll(page2Articles) }
     }
@@ -211,8 +211,8 @@ class ArticleCollectionServiceImplTest {
         val page1 = createArticlePage(page1Articles, totalCount = 4, pageNo = 1)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page1
-        coEvery { newsApiPort.fetchArticles("20240115", 2, pageSize) } throws RuntimeException("Network error")
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page1
+        coEvery { newsFetcher.fetchArticles("20240115", 2, pageSize) } throws RuntimeException("Network error")
         every { articleRepository.filterNonExisting(any()) } answers { firstArg<List<String>>() }
         every { articleRepository.saveAll(any()) } answers { firstArg<List<Article>>() }
 
@@ -223,7 +223,7 @@ class ArticleCollectionServiceImplTest {
 //        assertEquals(CollectionException::class, exception.cause)
 
         assertTrue(exception.message?.contains("Failed to collect pages") == true)
-        coVerify(atLeast = 2) { newsApiPort.fetchArticles("20240115", 2, pageSize) } // Initial + retry
+        coVerify(atLeast = 2) { newsFetcher.fetchArticles("20240115", 2, pageSize) } // Initial + retry
     }
 
     @Test
@@ -235,7 +235,7 @@ class ArticleCollectionServiceImplTest {
         val pageSize = 2
 
         var attemptCount = 0
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } answers {
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } answers {
             attemptCount++
             if (attemptCount < 3) throw RuntimeException("Temporary failure")
             else page
@@ -257,7 +257,7 @@ class ArticleCollectionServiceImplTest {
         val date = LocalDate.of(2024, 1, 15)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } throws RuntimeException("Permanent failure")
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } throws RuntimeException("Permanent failure")
 
         // When & Then
         val exception = assertThrows<CollectionException> {
@@ -266,7 +266,7 @@ class ArticleCollectionServiceImplTest {
 
         assertTrue(exception.message?.contains("Max retries exceeded during initialization") == true)
         // 1 + 3 retries
-        coVerify(exactly = 4) { newsApiPort.fetchArticles("20240115", 1, pageSize) }
+        coVerify(exactly = 4) { newsFetcher.fetchArticles("20240115", 1, pageSize) }
     }
 
     @Test
@@ -276,7 +276,7 @@ class ArticleCollectionServiceImplTest {
         val page = createArticlePage(emptyList(), totalCount = 0, pageNo = 1)
         val pageSize = 2
 
-        coEvery { newsApiPort.fetchArticles("20240115", 1, pageSize) } returns page
+        coEvery { newsFetcher.fetchArticles("20240115", 1, pageSize) } returns page
 
         // When
         service.collectArticlesForDate(date, pageSize)

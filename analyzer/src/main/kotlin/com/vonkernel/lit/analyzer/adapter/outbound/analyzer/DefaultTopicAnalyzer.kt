@@ -1,6 +1,6 @@
 package com.vonkernel.lit.analyzer.adapter.outbound.analyzer
 
-import com.vonkernel.lit.ai.application.PromptOrchestrator
+import com.vonkernel.lit.ai.domain.service.PromptOrchestrator
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.TopicExtractionInput
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.TopicExtractionOutput
 import com.vonkernel.lit.analyzer.domain.port.analyzer.TopicAnalyzer

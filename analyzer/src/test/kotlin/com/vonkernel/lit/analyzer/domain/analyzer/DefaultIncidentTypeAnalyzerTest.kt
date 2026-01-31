@@ -1,6 +1,6 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
-import com.vonkernel.lit.ai.application.PromptOrchestrator
+import com.vonkernel.lit.ai.domain.service.PromptOrchestrator
 import com.vonkernel.lit.ai.domain.model.ExecutionMetadata
 import com.vonkernel.lit.ai.domain.model.PromptExecutionResult
 import com.vonkernel.lit.ai.domain.model.TokenUsage
@@ -9,7 +9,7 @@ import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeClassif
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeClassificationOutput
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeItem
 import com.vonkernel.lit.core.entity.IncidentType
-import com.vonkernel.lit.core.repository.IncidentTypeRepository
+import com.vonkernel.lit.core.port.repository.IncidentTypeRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk

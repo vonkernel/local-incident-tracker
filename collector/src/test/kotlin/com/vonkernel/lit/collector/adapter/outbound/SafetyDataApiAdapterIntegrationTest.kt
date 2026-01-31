@@ -1,6 +1,7 @@
 package com.vonkernel.lit.collector.adapter.outbound
 
-import com.vonkernel.lit.collector.config.WebClientConfig
+import com.vonkernel.lit.collector.adapter.outbound.news.SafetyDataApiAdapter
+import com.vonkernel.lit.collector.adapter.outbound.news.config.WebClientConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue

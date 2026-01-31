@@ -7,6 +7,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.persistence.TestFixtures
+import com.vonkernel.lit.persistence.jpa.mapper.AnalysisResultOutboxMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName

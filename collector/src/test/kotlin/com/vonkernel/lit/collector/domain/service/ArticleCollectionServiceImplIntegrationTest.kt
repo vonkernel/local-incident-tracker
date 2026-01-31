@@ -1,7 +1,7 @@
 package com.vonkernel.lit.collector.domain.service
 
-import com.vonkernel.lit.collector.adapter.outbound.SafetyDataApiAdapter
-import com.vonkernel.lit.collector.config.WebClientConfig
+import com.vonkernel.lit.collector.adapter.outbound.news.SafetyDataApiAdapter
+import com.vonkernel.lit.collector.adapter.outbound.news.config.WebClientConfig
 import com.vonkernel.lit.collector.fake.FakeArticleRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
