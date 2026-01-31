@@ -1,11 +1,12 @@
 package com.vonkernel.lit.analyzer.adapter.outbound
 
-import com.vonkernel.lit.analyzer.adapter.outbound.model.KakaoAddress
-import com.vonkernel.lit.analyzer.adapter.outbound.model.KakaoAddressDocument
-import com.vonkernel.lit.analyzer.adapter.outbound.model.KakaoAddressResponse
-import com.vonkernel.lit.analyzer.adapter.outbound.model.KakaoKeywordDocument
-import com.vonkernel.lit.analyzer.adapter.outbound.model.KakaoKeywordResponse
-import com.vonkernel.lit.analyzer.adapter.outbound.model.KakaoMeta
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.KakaoGeocodingAdapter
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoAddress
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoAddressDocument
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoAddressResponse
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordDocument
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordResponse
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoMeta
 import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.persistence.entity.analysis.AddressEntity
 import com.vonkernel.lit.persistence.jpa.JpaAddressRepository

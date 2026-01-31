@@ -1,5 +1,6 @@
 package com.vonkernel.lit.analyzer.adapter.outbound
 
+import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.KakaoGeocodingAdapter
 import com.vonkernel.lit.persistence.jpa.JpaAddressRepository
 import io.mockk.every
 import io.mockk.mockk

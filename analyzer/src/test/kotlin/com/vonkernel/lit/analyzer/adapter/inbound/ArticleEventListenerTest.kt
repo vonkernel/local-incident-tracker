@@ -1,8 +1,9 @@
 package com.vonkernel.lit.analyzer.adapter.inbound
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.vonkernel.lit.analyzer.adapter.inbound.model.ArticlePayload
-import com.vonkernel.lit.analyzer.adapter.inbound.model.DebeziumEnvelope
+import com.vonkernel.lit.analyzer.adapter.inbound.consumer.ArticleEventListener
+import com.vonkernel.lit.analyzer.adapter.inbound.consumer.model.ArticlePayload
+import com.vonkernel.lit.analyzer.adapter.inbound.consumer.model.DebeziumEnvelope
 import com.vonkernel.lit.analyzer.domain.service.ArticleAnalysisService
 import com.vonkernel.lit.core.entity.Article
 import io.mockk.coEvery

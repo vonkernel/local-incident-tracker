@@ -1,6 +1,9 @@
 package com.vonkernel.lit.analyzer.adapter.inbound.model
 
-import com.vonkernel.lit.analyzer.adapter.inbound.config.DebeziumObjectMapperConfig
+import com.vonkernel.lit.analyzer.adapter.inbound.consumer.config.DebeziumObjectMapperConfig
+import com.vonkernel.lit.analyzer.adapter.inbound.consumer.model.ArticlePayload
+import com.vonkernel.lit.analyzer.adapter.inbound.consumer.model.DebeziumEnvelope
+import com.vonkernel.lit.analyzer.adapter.inbound.consumer.model.toArticle
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test

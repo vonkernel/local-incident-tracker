@@ -1,5 +1,6 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
+import com.vonkernel.lit.analyzer.domain.port.analyzer.IncidentTypeAnalyzer
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue

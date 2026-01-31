@@ -128,14 +128,15 @@ graph TB
         direction TB
         IN["Inbound Adapter"]
         OUT["Outbound Adapter"]
-        IN --> IN1["ArticleEventListener<br/>(Kafka Consumer)"]
-        IN --> IN2["DebeziumArticleEvent<br/>(CDC 이벤트 모델)"]
-        OUT --> OUT1["KakaoGeocodingAdapter<br/>(Kakao Local API)"]
+        IN --> IN1["adapter/inbound/consumer<br/>ArticleEventListener (Kafka Consumer)<br/>DebeziumArticleEvent (CDC 모델)"]
+        OUT --> OUT1["adapter/outbound/analyzer<br/>Default*Analyzer 7개 (LLM 호출)"]
+        OUT --> OUT2["adapter/outbound/geocoding<br/>KakaoGeocodingAdapter (Kakao API)"]
     end
 
-    subgraph Port ["Port Interfaces (Contracts)"]
-        P1["GeocodingPort"]
-        P2["AnalysisResultRepository (shared)"]
+    subgraph Port ["Port Interfaces (Domain Contracts)"]
+        P1["port/analyzer<br/>7개 Analyzer 인터페이스 + LLM I/O 모델"]
+        P2["port/geocoding<br/>GeocodingPort"]
+        P3["AnalysisResultRepository (shared)"]
     end
 
     subgraph Service ["Domain Service (FP - Orchestration)"]
@@ -143,35 +144,23 @@ graph TB
         S2["LocationAnalysisService<br/>위치 분석 파이프라인 오케스트레이션"]
     end
 
-    subgraph Core ["Domain Core (FP - Pure Analyzers)"]
-        A1["RefineArticleAnalyzer"]
-        A2["IncidentTypeAnalyzer"]
-        A3["UrgencyAnalyzer"]
-        A4["KeywordAnalyzer"]
-        A5["TopicAnalyzer"]
-        A6["LocationAnalyzer"]
-        A7["LocationValidator"]
-    end
-
     subgraph Models ["Domain Models (Immutable)"]
         M1["Article, RefinedArticle (shared)"]
         M2["AnalysisResult (shared)"]
-        M3["ExtractedLocation, LocationType (analyzer)"]
-        M4["LLM Input/Output 모델 (analyzer)"]
     end
 
     Adapter_Layer --> Port
     Port --> Service
-    Service --> Core
-    Core --> Models
+    Service --> Models
 ```
 
 **계층별 책임**:
-- **Adapter Layer**: Kafka 이벤트 수신, Kakao API 호출, CDC 이벤트 역직렬화
-- **Port Interfaces**: 외부 의존성 계약 (지오코딩, 영속성)
-- **Domain Service**: 분석 파이프라인 오케스트레이션, 코루틴 병렬 실행 관리
-- **Domain Core**: 각 분석기 인터페이스 및 LLM 호출 구현
-- **Domain Models**: 분석 입출력 데이터 클래스 (불변)
+- **Adapter Layer (Inbound)**: Kafka CDC 이벤트 수신, Debezium 이벤트 역직렬화
+- **Adapter Layer (Outbound/Analyzer)**: ai-core의 `PromptOrchestrator`를 사용한 LLM 기반 분석기 구현체
+- **Adapter Layer (Outbound/Geocoding)**: Kakao Local API 호출을 통한 지오코딩
+- **Port Interfaces**: 도메인 계약 (분석기 인터페이스 7개, 지오코딩 포트, LLM 입출력 모델)
+- **Domain Service**: 분석 파이프라인 오케스트레이션, 코루틴 병렬 실행 관리 (Port 인터페이스에만 의존)
+- **Domain Models**: 불변 데이터 클래스 (shared 모듈 참조)
 
 ---
 
@@ -179,11 +168,18 @@ graph TB
 
 ### Adapter Layer
 
-| 컴포넌트 | 역할 | 입출력 |
-|---------|------|--------|
-| `ArticleEventListener` | Kafka 배치 Consumer. Debezium CDC 이벤트를 수신하여 분석 시작 | `ConsumerRecord` → `ArticleAnalysisService.analyze()` 호출 |
-| `DebeziumArticleEvent` | CDC 이벤트 역직렬화 모델. `op=c`(create), `op=r`(read) 이벤트만 처리 | JSON → `Article` 변환 |
-| `KakaoGeocodingAdapter` | `GeocodingPort` 구현체. Kakao Local API를 호출하여 주소/키워드 지오코딩 수행 | 주소 문자열 → `List<Location>` (좌표 + 행정구역) |
+| 컴포넌트 | 패키지 | 역할 | 입출력 |
+|---------|--------|------|--------|
+| `ArticleEventListener` | `adapter/inbound/consumer` | Kafka 배치 Consumer. Debezium CDC 이벤트를 수신하여 분석 시작 | `ConsumerRecord` → `ArticleAnalysisService.analyze()` 호출 |
+| `DebeziumArticleEvent` | `adapter/inbound/consumer/model` | CDC 이벤트 역직렬화 모델. `op=c`(create), `op=r`(read) 이벤트만 처리 | JSON → `Article` 변환 |
+| `DefaultRefineArticleAnalyzer` | `adapter/outbound/analyzer` | `RefineArticleAnalyzer` 구현체. LLM으로 기사 정제 및 요약 생성 | `RefineArticleInput` → `RefineArticleOutput` |
+| `DefaultIncidentTypeAnalyzer` | `adapter/outbound/analyzer` | `IncidentTypeAnalyzer` 구현체. LLM으로 사건 유형 다중 분류 | `IncidentTypeClassificationInput` → `IncidentTypeClassificationOutput` |
+| `DefaultUrgencyAnalyzer` | `adapter/outbound/analyzer` | `UrgencyAnalyzer` 구현체. LLM으로 긴급도 평가 | `UrgencyAssessmentInput` → `UrgencyAssessmentOutput` |
+| `DefaultKeywordAnalyzer` | `adapter/outbound/analyzer` | `KeywordAnalyzer` 구현체. LLM으로 키워드 추출 | `KeywordExtractionInput` → `KeywordExtractionOutput` |
+| `DefaultTopicAnalyzer` | `adapter/outbound/analyzer` | `TopicAnalyzer` 구현체. LLM으로 주제 추출 | `TopicExtractionInput` → `TopicExtractionOutput` |
+| `DefaultLocationAnalyzer` | `adapter/outbound/analyzer` | `LocationAnalyzer` 구현체. LLM으로 위치 엔티티 추출 | `LocationExtractionInput` → `LocationExtractionOutput` |
+| `DefaultLocationValidator` | `adapter/outbound/analyzer` | `LocationValidator` 구현체. LLM으로 위치 검증·정규화 | `LocationValidationInput` → `LocationExtractionOutput` |
+| `KakaoGeocodingAdapter` | `adapter/outbound/geocoding` | `GeocodingPort` 구현체. Kakao Local API를 호출하여 주소/키워드 지오코딩 수행 | 주소 문자열 → `List<Location>` (좌표 + 행정구역) |
 
 ### Domain Service
 
@@ -192,23 +188,18 @@ graph TB
 | `ArticleAnalysisService` | 전체 분석 파이프라인 오케스트레이션. Phase 1(정제) → Phase 2(5개 병렬 분석) → 결과 집계 및 저장 | `Article` → `AnalysisResult` (PostgreSQL 저장) |
 | `LocationAnalysisService` | 위치 분석 3단계 파이프라인 오케스트레이션. 추출 → 검증 → 지오코딩 | 제목, 본문 → `List<Location>` |
 
-### Domain Core (Analyzers)
-
-| 인터페이스 | 구현체 | 역할 |
-|-----------|--------|------|
-| `RefineArticleAnalyzer` | `DefaultRefineArticleAnalyzer` | 기사 제목·본문 정제, 요약 생성 |
-| `IncidentTypeAnalyzer` | `DefaultIncidentTypeAnalyzer` | 사건 유형 다중 분류 |
-| `UrgencyAnalyzer` | `DefaultUrgencyAnalyzer` | 긴급도 단일 레이블 평가 |
-| `KeywordAnalyzer` | `DefaultKeywordAnalyzer` | 핵심 키워드 추출 |
-| `TopicAnalyzer` | `DefaultTopicAnalyzer` | 주제 단일 추출 |
-| `LocationAnalyzer` | `DefaultLocationAnalyzer` | 위치 엔티티 추출 (ADDRESS/LANDMARK/UNRESOLVABLE 분류) |
-| `LocationValidator` | `DefaultLocationValidator` | 추출된 위치 필터링·정규화·정제 |
-
 ### Port Interface
 
-| 인터페이스 | 역할 |
-|-----------|------|
-| `GeocodingPort` | 지오코딩 외부 서비스 계약 (`geocodeByAddress`, `geocodeByKeyword`) |
+| 인터페이스 | 패키지 | 역할 |
+|-----------|--------|------|
+| `RefineArticleAnalyzer` | `domain/port/analyzer` | 기사 정제 계약 (제목·본문 정제, 요약 생성) |
+| `IncidentTypeAnalyzer` | `domain/port/analyzer` | 사건 유형 분류 계약 (35+ 유형 다중 분류) |
+| `UrgencyAnalyzer` | `domain/port/analyzer` | 긴급도 평가 계약 (단일 레이블) |
+| `KeywordAnalyzer` | `domain/port/analyzer` | 키워드 추출 계약 |
+| `TopicAnalyzer` | `domain/port/analyzer` | 주제 추출 계약 |
+| `LocationAnalyzer` | `domain/port/analyzer` | 위치 엔티티 추출 계약 (ADDRESS/LANDMARK/UNRESOLVABLE 분류) |
+| `LocationValidator` | `domain/port/analyzer` | 위치 검증·필터링·정규화 계약 |
+| `GeocodingPort` | `domain/port/geocoding` | 지오코딩 외부 서비스 계약 (`geocodeByAddress`, `geocodeByKeyword`) |
 
 ---
 
@@ -219,41 +210,52 @@ analyzer/src/main/kotlin/com/vonkernel/lit/analyzer/
 ├── AnalyzerApplication.kt
 ├── adapter/
 │   ├── inbound/
-│   │   ├── ArticleEventListener.kt
-│   │   ├── config/
-│   │   │   └── DebeziumObjectMapperConfig.kt
-│   │   └── model/
-│   │       └── DebeziumArticleEvent.kt
+│   │   └── consumer/
+│   │       ├── ArticleEventListener.kt
+│   │       ├── config/
+│   │       │   └── DebeziumObjectMapperConfig.kt
+│   │       └── model/
+│   │           └── DebeziumArticleEvent.kt
 │   └── outbound/
-│       ├── KakaoGeocodingAdapter.kt
-│       ├── config/
-│       │   └── KakaoWebClientConfig.kt
-│       └── model/
-│           ├── KakaoAddressResponse.kt
-│           ├── KakaoKeywordResponse.kt
-│           └── KakaoMeta.kt
+│       ├── analyzer/
+│       │   ├── DefaultRefineArticleAnalyzer.kt
+│       │   ├── DefaultIncidentTypeAnalyzer.kt
+│       │   ├── DefaultUrgencyAnalyzer.kt
+│       │   ├── DefaultKeywordAnalyzer.kt
+│       │   ├── DefaultTopicAnalyzer.kt
+│       │   ├── DefaultLocationAnalyzer.kt
+│       │   └── DefaultLocationValidator.kt
+│       └── geocoding/
+│           ├── KakaoGeocodingAdapter.kt
+│           ├── config/
+│           │   └── KakaoWebClientConfig.kt
+│           └── model/
+│               ├── KakaoAddressResponse.kt
+│               ├── KakaoKeywordResponse.kt
+│               └── KakaoMeta.kt
 └── domain/
-    ├── analyzer/
-    │   ├── RefineArticleAnalyzer.kt / DefaultRefineArticleAnalyzer.kt
-    │   ├── IncidentTypeAnalyzer.kt / DefaultIncidentTypeAnalyzer.kt
-    │   ├── UrgencyAnalyzer.kt / DefaultUrgencyAnalyzer.kt
-    │   ├── KeywordAnalyzer.kt / DefaultKeywordAnalyzer.kt
-    │   ├── TopicAnalyzer.kt / DefaultTopicAnalyzer.kt
-    │   ├── LocationAnalyzer.kt / DefaultLocationAnalyzer.kt
-    │   └── LocationValidator.kt / DefaultLocationValidator.kt
     ├── exception/
     │   └── ArticleAnalysisException.kt
-    ├── model/
-    │   ├── RefineArticleInput.kt / RefineArticleOutput.kt
-    │   ├── IncidentTypeClassificationInput.kt / IncidentTypeClassificationOutput.kt
-    │   ├── UrgencyAssessmentInput.kt / UrgencyAssessmentOutput.kt
-    │   ├── KeywordExtractionInput.kt / KeywordExtractionOutput.kt
-    │   ├── TopicExtractionInput.kt / TopicExtractionOutput.kt
-    │   ├── LocationExtractionInput.kt / LocationExtractionOutput.kt
-    │   ├── LocationValidationInput.kt
-    │   └── IncidentTypeItem.kt / UrgencyItem.kt
     ├── port/
-    │   └── GeocodingPort.kt
+    │   ├── analyzer/
+    │   │   ├── RefineArticleAnalyzer.kt
+    │   │   ├── IncidentTypeAnalyzer.kt
+    │   │   ├── UrgencyAnalyzer.kt
+    │   │   ├── KeywordAnalyzer.kt
+    │   │   ├── TopicAnalyzer.kt
+    │   │   ├── LocationAnalyzer.kt
+    │   │   ├── LocationValidator.kt
+    │   │   └── model/
+    │   │       ├── RefineArticleInput.kt / RefineArticleOutput.kt
+    │   │       ├── IncidentTypeClassificationInput.kt / IncidentTypeClassificationOutput.kt
+    │   │       ├── UrgencyAssessmentInput.kt / UrgencyAssessmentOutput.kt
+    │   │       ├── KeywordExtractionInput.kt / KeywordExtractionOutput.kt
+    │   │       ├── TopicExtractionInput.kt / TopicExtractionOutput.kt
+    │   │       ├── LocationExtractionInput.kt / LocationExtractionOutput.kt
+    │   │       ├── LocationValidationInput.kt
+    │   │       └── IncidentTypeItem.kt / UrgencyItem.kt
+    │   └── geocoding/
+    │       └── GeocodingPort.kt
     └── service/
         ├── ArticleAnalysisService.kt
         └── LocationAnalysisService.kt

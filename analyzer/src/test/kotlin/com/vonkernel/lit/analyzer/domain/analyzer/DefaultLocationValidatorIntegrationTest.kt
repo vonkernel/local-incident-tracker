@@ -1,7 +1,8 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
-import com.vonkernel.lit.analyzer.domain.model.ExtractedLocation
-import com.vonkernel.lit.analyzer.domain.model.LocationType
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.ExtractedLocation
+import com.vonkernel.lit.analyzer.domain.port.analyzer.model.LocationType
+import com.vonkernel.lit.analyzer.domain.port.analyzer.LocationValidator
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
