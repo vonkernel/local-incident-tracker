@@ -9,9 +9,7 @@ import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeClassif
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeClassificationOutput
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.IncidentTypeItem
 import com.vonkernel.lit.core.entity.IncidentType
-import com.vonkernel.lit.core.port.repository.IncidentTypeRepository
 import io.mockk.coEvery
-import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
@@ -22,8 +20,7 @@ import org.junit.jupiter.api.Test
 class DefaultIncidentTypeAnalyzerTest {
 
     private val promptOrchestrator: PromptOrchestrator = mockk()
-    private val incidentTypeRepository: IncidentTypeRepository = mockk()
-    private val analyzer = DefaultIncidentTypeAnalyzer(promptOrchestrator, incidentTypeRepository)
+    private val analyzer = DefaultIncidentTypeAnalyzer(promptOrchestrator)
 
     private val dummyMetadata = ExecutionMetadata(
         model = "test-model",
@@ -40,7 +37,6 @@ class DefaultIncidentTypeAnalyzerTest {
             IncidentType(code = "flood", name = "홍수"),
             IncidentType(code = "typhoon", name = "태풍")
         )
-        every { incidentTypeRepository.findAll() } returns dbTypes
 
         val llmOutput = IncidentTypeClassificationOutput(
             incidentTypes = listOf(
@@ -58,7 +54,7 @@ class DefaultIncidentTypeAnalyzerTest {
         } returns PromptExecutionResult(llmOutput, dummyMetadata)
 
         // When
-        val result = analyzer.analyze("산불 발생", "강원도에서 산불이 발생했습니다.")
+        val result = analyzer.analyze(dbTypes, "산불 발생", "강원도에서 산불이 발생했습니다.")
 
         // Then
         assertThat(result).hasSize(2)
@@ -72,7 +68,6 @@ class DefaultIncidentTypeAnalyzerTest {
         val dbTypes = listOf(
             IncidentType(code = "forest_fire", name = "산불")
         )
-        every { incidentTypeRepository.findAll() } returns dbTypes
 
         val llmOutput = IncidentTypeClassificationOutput(
             incidentTypes = listOf(
@@ -90,7 +85,7 @@ class DefaultIncidentTypeAnalyzerTest {
         } returns PromptExecutionResult(llmOutput, dummyMetadata)
 
         // When
-        val result = analyzer.analyze("재난 발생", "재난이 발생했습니다.")
+        val result = analyzer.analyze(dbTypes, "재난 발생", "재난이 발생했습니다.")
 
         // Then
         assertThat(result).hasSize(1)
@@ -104,7 +99,6 @@ class DefaultIncidentTypeAnalyzerTest {
         val dbTypes = listOf(
             IncidentType(code = "forest_fire", name = "산불")
         )
-        every { incidentTypeRepository.findAll() } returns dbTypes
 
         val llmOutput = IncidentTypeClassificationOutput(incidentTypes = emptyList())
         coEvery {
@@ -117,7 +111,7 @@ class DefaultIncidentTypeAnalyzerTest {
         } returns PromptExecutionResult(llmOutput, dummyMetadata)
 
         // When
-        val result = analyzer.analyze("기사 제목", "기사 내용")
+        val result = analyzer.analyze(dbTypes, "기사 제목", "기사 내용")
 
         // Then
         assertThat(result).isEmpty()

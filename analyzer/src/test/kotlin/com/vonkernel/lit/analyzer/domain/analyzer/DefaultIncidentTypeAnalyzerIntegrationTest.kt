@@ -1,6 +1,7 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
 import com.vonkernel.lit.analyzer.domain.port.analyzer.IncidentTypeAnalyzer
+import com.vonkernel.lit.core.port.repository.IncidentTypeRepository
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -28,6 +29,9 @@ class DefaultIncidentTypeAnalyzerIntegrationTest {
     @Autowired
     private lateinit var incidentTypeAnalyzer: IncidentTypeAnalyzer
 
+    @Autowired
+    private lateinit var incidentTypeRepository: IncidentTypeRepository
+
     @Test
     fun `재난 기사에서 사건 유형을 분류한다`() = runTest {
         // Given
@@ -37,7 +41,8 @@ class DefaultIncidentTypeAnalyzerIntegrationTest {
             "현재까지 인명 피해는 보고되지 않았으나, 건물 내 수백 명이 대피한 것으로 알려졌다."
 
         // When
-        val result = incidentTypeAnalyzer.analyze(title, content)
+        val incidentTypes = incidentTypeRepository.findAll()
+        val result = incidentTypeAnalyzer.analyze(incidentTypes, title, content)
 
         // Then - 구조 검증 (LLM 응답은 예측 불가능하므로 구조만 검증)
         assertNotNull(result)
@@ -63,7 +68,8 @@ class DefaultIncidentTypeAnalyzerIntegrationTest {
             "복지·교육·국방 분야에 중점 배분되었다."
 
         // When
-        val result = incidentTypeAnalyzer.analyze(title, content)
+        val incidentTypes = incidentTypeRepository.findAll()
+        val result = incidentTypeAnalyzer.analyze(incidentTypes, title, content)
 
         // Then
         assertNotNull(result)

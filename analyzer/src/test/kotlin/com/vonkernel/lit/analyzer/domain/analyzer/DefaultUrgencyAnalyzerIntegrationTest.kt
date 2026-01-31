@@ -1,6 +1,7 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
 import com.vonkernel.lit.analyzer.domain.port.analyzer.UrgencyAnalyzer
+import com.vonkernel.lit.core.port.repository.UrgencyRepository
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -28,6 +29,9 @@ class DefaultUrgencyAnalyzerIntegrationTest {
     @Autowired
     private lateinit var urgencyAnalyzer: UrgencyAnalyzer
 
+    @Autowired
+    private lateinit var urgencyRepository: UrgencyRepository
+
     @Test
     fun `긴급 재난 기사의 긴급도를 높게 평가한다`() = runTest {
         // Given
@@ -37,7 +41,8 @@ class DefaultUrgencyAnalyzerIntegrationTest {
             "여진이 계속되고 있어 주민 대피가 진행 중이다."
 
         // When
-        val result = urgencyAnalyzer.analyze(title, content)
+        val urgencies = urgencyRepository.findAll()
+        val result = urgencyAnalyzer.analyze(urgencies, title, content)
 
         // Then - 구조 검증
         assertNotNull(result)
@@ -59,7 +64,8 @@ class DefaultUrgencyAnalyzerIntegrationTest {
             "이번 캠페인은 주거지역 전기 안전 점검과 소화기 사용법 교육을 중심으로 진행된다."
 
         // When
-        val result = urgencyAnalyzer.analyze(title, content)
+        val urgencies = urgencyRepository.findAll()
+        val result = urgencyAnalyzer.analyze(urgencies, title, content)
 
         // Then
         assertNotNull(result)
