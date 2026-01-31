@@ -11,6 +11,7 @@ LLM(Large Language Model) 프롬프트 실행을 위한 독립적인 라이브�
 - **Provider 독립성**: OpenAI, Anthropic 등 다양한 LLM 제공자를 동일한 인터페이스로 사용
 - **프롬프트 외부화**: YAML 파일로 프롬프트를 관리하여 코드 변경 없이 수정 가능, 추후에 외부 프롬프트 관리 툴로 확장 가능
 - **타입 안전성**: 제네릭을 활용한 컴파일 타임 타입 검증 (`Prompt<Input, Output>`)
+- **텍스트 임베딩**: 텍스트를 벡터로 변환하는 임베딩 실행 지원 (`EmbeddingExecutor`)
 - **비동기 실행**: Kotlin Coroutines 기반 suspend 함수로 효율적인 I/O 처리
 - **병렬 실행**: 여러 프롬프트를 동시에 실행하여 전체 처리 시간 단축
 - **명확한 예외 계층**: Sealed class 기반 예외로 단계별 오류 처리
@@ -24,18 +25,20 @@ LLM(Large Language Model) 프롬프트 실행을 위한 독립적인 라이브�
 ai-core는 도메인 로직과 외부 의존성(Spring AI, LLM API)을 명확히 분리합니다.
 
 **Port (인터페이스)**:
-- `PromptExecutor`: LLM 실행을 추상화 (도메인 → 외부 LLM API)
+- `PromptExecutor`: LLM 프롬프트 실행을 추상화 (도메인 → 외부 LLM API)
+- `EmbeddingExecutor`: 텍스트 임베딩 실행을 추상화 (도메인 → 외부 Embedding API)
 - `PromptLoader`: 프롬프트 로딩을 추상화 (도메인 → YAML 파일)
 
 **Adapter (구현체)**:
-- `OpenAiPromptExecutor`: OpenAI API 호출 (Spring AI 통합)
+- `OpenAiPromptExecutor`: OpenAI Chat API 호출 (Spring AI 통합)
+- `OpenAiEmbeddingExecutor`: OpenAI Embedding API 호출 (Spring AI 통합)
 - `YamlPromptLoader`: YAML 파일에서 프롬프트 로드
 
 이를 통해 도메인 계층은 Spring AI나 특정 LLM Provider에 의존하지 않으며, 새로운 Provider 추가 시 Adapter만 구현하면 됩니다.
 
 ### 2. Provider 추상화
 
-**LlmProvider** enum으로 제공자를 정의하고, **LlmModel** enum으로 각 Provider의 모델을 관리합니다.
+**LlmProvider** enum으로 제공자를 정의하고, **LlmModel** / **EmbeddingModel** enum으로 각 Provider의 모델을 관리합니다.
 
 ```kotlin
 enum class LlmProvider {
@@ -47,9 +50,13 @@ enum class LlmModel(val provider: LlmProvider, val modelId: String) {
     GPT_5_MINI(LlmProvider.OPENAI, "gpt-5-mini"),
     // 추가 모델 정의
 }
+
+enum class EmbeddingModel(val provider: LlmProvider, val modelId: String, val defaultDimensions: Int) {
+    TEXT_EMBEDDING_3_SMALL(LlmProvider.OPENAI, "text-embedding-3-small", 1536),
+}
 ```
 
-각 `PromptExecutor` 구현체는 `supports(provider: LlmProvider)` 메서드로 지원 여부를 명시하며, `PromptOrchestrator`가 런타임에 적절한 Executor를 선택합니다.
+각 `PromptExecutor` / `EmbeddingExecutor` 구현체는 `supports(provider: LlmProvider)` 메서드로 지원 여부를 명시하며, `PromptOrchestrator`가 런타임에 적절한 Executor를 선택합니다.
 
 ### 3. 프롬프트 관리 전략
 
@@ -161,6 +168,7 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 │                                              │
 │   ┌───────────────────────────────────┐      │
 │   │ PromptExecutor (Port)             │      │
+│   │ EmbeddingExecutor (Port)          │      │
 │   │ PromptLoader (Port)               │      │
 │   └───────────────────────────────────┘      │
 │                                              │
@@ -173,7 +181,12 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 │        Adapter Layer                         │
 │   ┌──────────────────────────────┐           │
 │   │ OpenAiPromptExecutor         │           │
-│   │ (Spring AI Integration)      │           │
+│   │ (Spring AI Chat Integration) │           │
+│   └──────────────────────────────┘           │
+│                                              │
+│   ┌──────────────────────────────┐           │
+│   │ OpenAiEmbeddingExecutor      │           │
+│   │ (Spring AI Embedding)        │           │
 │   └──────────────────────────────┘           │
 │                                              │
 │   ┌──────────────────────────────┐           │
@@ -202,13 +215,24 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 
 #### PromptExecutor (Port)
 
-LLM 실행을 추상화하는 인터페이스로, Provider별 구현체를 제공합니다.
+LLM 프롬프트 실행을 추상화하는 인터페이스로, Provider별 구현체를 제공합니다.
 
 **주요 메서드**:
 - `supports(provider: LlmProvider)`: 지원 여부 확인
 - `suspend fun execute<I, O>(prompt, input)`: 프롬프트 실행
 
-**구현체**: `OpenAiPromptExecutor` (Spring AI 기반 OpenAI 호출)
+**구현체**: `OpenAiPromptExecutor` (Spring AI 기반 OpenAI Chat 호출)
+
+#### EmbeddingExecutor (Port)
+
+텍스트 임베딩 실행을 추상화하는 인터페이스로, Provider별 구현체를 제공합니다.
+
+**주요 메서드**:
+- `supports(provider: LlmProvider)`: 지원 여부 확인
+- `suspend fun embed(text, model, dimensions)`: 단건 텍스트를 임베딩 벡터(FloatArray)로 변환
+- `suspend fun embedAll(texts, model, dimensions)`: 여러 텍스트를 한 번의 API 호출로 배치 임베딩 (List<FloatArray> 반환)
+
+**구현체**: `OpenAiEmbeddingExecutor` (Spring AI 기반 OpenAI Embedding 호출, 단건/배치 모두 지원)
 
 #### PromptLoader (Port)
 
@@ -413,6 +437,35 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 }
 ```
 
+### 5. 텍스트 임베딩
+
+`EmbeddingExecutor`를 직접 주입받아 텍스트를 벡터로 변환합니다. 프롬프트 실행과 달리 Orchestrator 없이 Port를 직접 사용합니다. 단건(`embed`)과 배치(`embedAll`) 모두 지원합니다.
+
+```kotlin
+@Service
+class ArticleEmbedder(
+    private val embeddingExecutor: EmbeddingExecutor
+) {
+    // 단건 임베딩
+    suspend fun generateEmbedding(text: String): FloatArray {
+        return embeddingExecutor.embed(
+            text = text,
+            model = EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
+            dimensions = 128
+        )
+    }
+
+    // 배치 임베딩 (한 번의 API 호출로 여러 텍스트 처리)
+    suspend fun generateEmbeddings(texts: List<String>): List<FloatArray> {
+        return embeddingExecutor.embedAll(
+            texts = texts,
+            model = EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
+            dimensions = 128
+        )
+    }
+}
+```
+
 ---
 
 ## 프로젝트 구조
@@ -423,7 +476,8 @@ ai-core/
 │   ├── adapter/                        # 어댑터 계층 (외부 연동)
 │   │   ├── executor/
 │   │   │   └── openai/
-│   │   │       ├── OpenAiPromptExecutor.kt      # OpenAI 구현체
+│   │   │       ├── OpenAiPromptExecutor.kt      # OpenAI Chat 구현체
+│   │   │       ├── OpenAiEmbeddingExecutor.kt   # OpenAI Embedding 구현체
 │   │   │       └── OpenAiSpecificOptions.kt     # OpenAI 전용 옵션
 │   │   └── prompt/
 │   │       ├── YamlPromptLoader.kt              # YAML 로더
@@ -437,10 +491,12 @@ ai-core/
 │       │   ├── PromptExecutionResult.kt # 실행 결과
 │       │   ├── LlmProvider.kt          # Provider enum
 │       │   ├── LlmModel.kt             # Model enum
+│       │   ├── EmbeddingModel.kt       # Embedding Model enum
 │       │   ├── ExecutionMetadata.kt    # 실행 메타데이터
 │       │   └── TokenUsage.kt           # 토큰 사용량
 │       ├── port/                       # Port 인터페이스
-│       │   ├── PromptExecutor.kt       # LLM 실행 추상화
+│       │   ├── PromptExecutor.kt       # LLM 프롬프트 실행 추상화
+│       │   ├── EmbeddingExecutor.kt    # 텍스트 임베딩 실행 추상화
 │       │   └── PromptLoader.kt         # 프롬프트 로딩 추상화
 │       ├── service/                    # 도메인 서비스
 │       │   ├── PromptOrchestrator.kt   # 프롬프트 실행 조율
@@ -462,7 +518,9 @@ ai-core/
 │   │   ├── infrastructure/adapter/
 │   │   │   ├── YamlPromptLoaderTest.kt
 │   │   │   ├── OpenAiPromptExecutorTest.kt
-│   │   │   └── OpenAiPromptExecutorIntegrationTest.kt
+│   │   │   ├── OpenAiPromptExecutorIntegrationTest.kt
+│   │   │   ├── OpenAiEmbeddingExecutorTest.kt
+│   │   │   └── OpenAiEmbeddingExecutorIntegrationTest.kt
 │   │   └── IntegrationTestApplication.kt        # Test용 Spring Boot App
 │   └── resources/
 │       └── prompts/
@@ -498,6 +556,7 @@ ai-core는 **라이브러리 모듈**이므로 Spring Boot 애플리케이션 �
 **테스트 파일**:
 - `YamlPromptLoaderTest.kt`: 프롬프트 YAML 로딩 검증
 - `OpenAiPromptExecutorTest.kt`: Mock 응답 파싱 검증
+- `OpenAiEmbeddingExecutorTest.kt`: Mock 임베딩 응답 및 예외 처리 검증
 - `PromptOrchestratorTest.kt`: 전체 플로우 (로드 → 치환 → 실행) 검증
 
 ### 2. Integration Test (실제 API 호출)
@@ -525,7 +584,8 @@ cp ai-core/.env.local.example ai-core/.env.local
 ```
 
 **테스트 파일**:
-- `OpenAiPromptExecutorIntegrationTest.kt`: 실제 OpenAI API 호출 및 응답 파싱
+- `OpenAiPromptExecutorIntegrationTest.kt`: 실제 OpenAI Chat API 호출 및 응답 파싱
+- `OpenAiEmbeddingExecutorIntegrationTest.kt`: 실제 OpenAI Embedding API 호출 및 벡터 반환 검증
 - `PromptOrchestratorIntegrationTest.kt`: 전체 플로우 실제 API 실행
 - `IntegrationTestApplication.kt`: 테스트용 Spring Boot Application
 
@@ -546,7 +606,9 @@ ai-core/src/test/
 │   ├── infrastructure/adapter/
 │   │   ├── YamlPromptLoaderTest.kt                    # Unit Test
 │   │   ├── OpenAiPromptExecutorTest.kt                # Unit Test (Mock)
-│   │   └── OpenAiPromptExecutorIntegrationTest.kt     # Integration Test (실제 API)
+│   │   ├── OpenAiPromptExecutorIntegrationTest.kt     # Integration Test (실제 API)
+│   │   ├── OpenAiEmbeddingExecutorTest.kt             # Unit Test (Mock)
+│   │   └── OpenAiEmbeddingExecutorIntegrationTest.kt  # Integration Test (실제 API)
 │   └── domain/service/
 │       ├── PromptOrchestratorTest.kt                  # Unit Test (Mock)
 │       └── PromptOrchestratorIntegrationTest.kt       # Integration Test (실제 API)
@@ -650,6 +712,7 @@ spring:
 | Sealed class 예외 계층 | 컴파일 타임 완전성 검증, 단계별 예외 구분, 명확한 복구 전략 |
 | Provider별 옵션 Map 사용 | 유연성과 타입 안전성 균형, 새 Provider 추가 용이 |
 | 도메인 모듈에서 프롬프트 관리 | 높은 응집도, 프롬프트-도메인 로직 동시 관리, 독립적 배포 |
+| EmbeddingExecutor를 별도 Port로 분리 | 임베딩은 단일 호출(text→vector)이므로 Orchestrator 불필요, Port+Adapter로 충분 |
 
 ---
 

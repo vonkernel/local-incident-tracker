@@ -105,10 +105,51 @@ services:
       - lit_network
     restart: unless-stopped
 
+  opensearch:
+    build:
+      context: ./opensearch
+      dockerfile: Dockerfile
+    container_name: lit-opensearch
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "${OPENSEARCH_PORT}:9200"
+      - "9600:9600"
+    volumes:
+      - lit_opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - lit_network
+    restart: unless-stopped
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:3.3.0
+    container_name: lit-opensearch-dashboards
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    ports:
+      - "${OPENSEARCH_DASHBOARD_PORT}:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - lit_network
+    restart: unless-stopped
+
 volumes:
   lit_maindb_data:
     driver: local
   lit_kafka_data:
+    driver: local
+  lit_opensearch_data:
     driver: local
 
 networks:

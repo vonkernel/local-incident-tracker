@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: indexer
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:indexer-group}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      max-poll-records: 10
+    listener:
+      ack-mode: batch
+      type: batch
+
+server:
+  port: 8084
+
+kafka:
+  topic:
+    analysis-events: ${KAFKA_ANALYSIS_EVENTS_TOPIC:lit.public.analysis_result_outbox}
+  consumer:
+    group-id: ${KAFKA_CONSUMER_GROUP_ID:indexer-group}
+
+opensearch:
+  host: ${OPENSEARCH_HOST:localhost}
+  port: ${OPENSEARCH_PORT:9200}
+  index-name: ${OPENSEARCH_INDEX_NAME:articles}
