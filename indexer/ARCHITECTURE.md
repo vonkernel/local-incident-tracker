@@ -44,10 +44,10 @@ flowchart TD
     B --> C[AnalysisResultEventListener<br/>배치 Kafka Consumer]
     C --> D[ArticleIndexingService<br/>인덱싱 오케스트레이션]
     D --> E[IndexDocumentAssembler<br/>문서 변환]
-    D --> F[EmbeddingPort<br/>벡터 임베딩 생성]
+    D --> F[Embedder<br/>벡터 임베딩 생성]
     E --> G[ArticleIndexDocument 생성]
     F --> G
-    G --> H[SearchIndexPort<br/>OpenSearch 색인]
+    G --> H[SearchIndexer<br/>OpenSearch 색인]
 ```
 
 ---
@@ -73,7 +73,7 @@ Kafka CDC 이벤트에서 Debezium Envelope을 파싱하고, `analysis_result_ou
 ```mermaid
 flowchart LR
     AR[AnalysisResult] --> A1[IndexDocumentAssembler<br/>문서 필드 매핑]
-    AR --> A2[EmbeddingPort<br/>content → 벡터 임베딩]
+    AR --> A2[Embedder<br/>content → 벡터 임베딩]
     A1 --> R["ArticleIndexDocument"]
     A2 --> R
 ```
@@ -81,7 +81,7 @@ flowchart LR
 | 작업 | 입력 | 출력 | 설명 |
 |------|------|------|------|
 | IndexDocumentAssembler | `AnalysisResult` | `ArticleIndexDocument` (embedding 제외) | 필드 매핑 및 데이터 변환 (순수 함수) |
-| EmbeddingPort | 정제된 본문 (content) | `ByteArray` (128 bytes) | OpenAI text-embedding-3-small 모델 호출 |
+| Embedder | 정제된 본문 (content) | `ByteArray` (128 bytes) | OpenAI text-embedding-3-small 모델 호출 |
 
 ### 3단계: OpenSearch 색인
 
@@ -89,7 +89,7 @@ flowchart LR
 
 | 단계 | 입력 | 출력 |
 |------|------|------|
-| SearchIndexPort | `ArticleIndexDocument` | OpenSearch 색인 결과 |
+| SearchIndexer | `ArticleIndexDocument` | OpenSearch 색인 결과 |
 
 ---
 
@@ -112,8 +112,8 @@ graph TB
     end
 
     subgraph Port ["Port Interfaces (Contracts)"]
-        P1["SearchIndexPort"]
-        P2["EmbeddingPort"]
+        P1["SearchIndexer"]
+        P2["Embedder"]
         P3["(확장 가능: 추가 Port)"]
     end
 
@@ -148,33 +148,40 @@ graph TB
 
 ## 주요 컴포넌트
 
-### Adapter Layer
+### Port Interfaces
 
-| 컴포넌트 | 역할 | 입출력 |
-|---------|------|--------|
-| `AnalysisResultEventListener` | Kafka 배치 Consumer. Debezium CDC 이벤트를 수신하여 인덱싱 시작 | `ConsumerRecord` → `ArticleIndexingService.index()` 호출 |
-| `DebeziumOutboxEvent` | CDC 이벤트 역직렬화 모델. `op=c`(create), `op=r`(read) 이벤트만 처리 | JSON → `AnalysisResult` 변환 (outbox payload 파싱) |
-| `OpenSearchIndexAdapter` | `SearchIndexPort` 구현체. OpenSearch Java Client를 사용하여 문서 색인 수행 | `ArticleIndexDocument` → OpenSearch index/update |
-| `OpenAiEmbeddingAdapter` | `EmbeddingPort` 구현체. ai-core의 Spring AI를 통해 OpenAI Embedding API 호출 | 텍스트 → `ByteArray` (128 bytes) |
+| 인터페이스 | 역할 | 시그니처 |
+|-----------|------|----------|
+| `SearchIndexer` | OpenSearch 색인 계약. `articleId`를 문서 ID로 사용하여 upsert 수행 → 멱등성 보장 | `index(document): Unit`, `delete(articleId): Unit` |
+| `Embedder` | 텍스트 임베딩 생성 계약. indexer 내부에서는 `ByteArray`로 추상화하여 ai-core의 `EmbeddingExecutor`(`FloatArray`) 와 추상화 경계를 분리 | `embed(text): ByteArray` |
 
 ### Domain Service
 
-| 컴포넌트 | 역할 | 입출력 |
-|---------|------|--------|
-| `ArticleIndexingService` | 인덱싱 파이프라인 오케스트레이션. 문서 조립 + 임베딩 생성 (병렬) → 색인 | `AnalysisResult` → OpenSearch 색인 완료 |
+| 컴포넌트 | 역할 |
+|---------|------|
+| `ArticleIndexingService` | 인덱싱 파이프라인 오케스트레이터. `IndexDocumentAssembler`(문서 조립)와 `Embedder`(임베딩 생성)를 코루틴 `async`로 병렬 실행한 뒤, 결과를 합쳐 `SearchIndexer`로 색인. 임베딩 실패 시 `contentEmbedding = null`로 색인을 계속 진행하는 graceful degradation 전략 적용 |
 
 ### Domain Core
 
-| 컴포넌트 | 역할 | 입출력 |
-|---------|------|--------|
-| `IndexDocumentAssembler` | `AnalysisResult` → `ArticleIndexDocument` 변환 순수 함수 | 도메인 모델 → 검색 인덱스 문서 |
+| 컴포넌트 | 역할 |
+|---------|------|
+| `IndexDocumentAssembler` | `AnalysisResult` → `ArticleIndexDocument` 변환 순수 함수. CDC 페이로드의 `AnalysisResult`에 `refinedArticle`, `incidentTypes`, `urgency`, `keywords`, `topic`, `locations` 등 모든 데이터가 포함되어 있으므로 별도 Article 원본 DB 조회 없이 변환 완결 |
 
-### Port Interfaces
+### Adapter Layer
 
-| 인터페이스 | 역할 |
-|-----------|------|
-| `SearchIndexPort` | OpenSearch 색인 외부 서비스 계약 (`index(document)`, `delete(articleId)`) |
-| `EmbeddingPort` | 텍스트 임베딩 생성 계약 (`embed(text): ByteArray`) |
+**Inbound**:
+
+| 컴포넌트 | 역할 |
+|---------|------|
+| `AnalysisResultEventListener` | Kafka 배치 Consumer. `supervisorScope` + 개별 `async`로 배치 내 레코드 실패를 격리하여 하나의 레코드 실패가 배치 전체에 영향을 주지 않음. `executeWithRetry(maxRetries=1)` 적용 |
+| `DebeziumOutboxEvent` | CDC 이벤트 역직렬화 모델. Debezium이 JSONB 컬럼을 문자열로 전달하므로 **이중 역직렬화** 수행 (1차: Debezium Envelope → 2차: `payload` JSON 문자열 → `AnalysisResult`). `op=c`(create), `op=r`(read/snapshot) 이벤트만 처리 |
+
+**Outbound**:
+
+| 컴포넌트 | 구현 Port | 역할 |
+|---------|-----------|------|
+| `OpenSearchIndexAdapter` | `SearchIndexer` | OpenSearch Java Client를 사용하여 문서 색인. `articleId`를 문서 ID로 사용하여 동일 ID 재색인 시 기존 문서 갱신 (upsert) |
+| `EmbeddingAdapter` | `Embedder` | ai-core의 `EmbeddingExecutor`에 위임하여 OpenAI `text-embedding-3-small` (128차원) 호출 후, 반환된 `FloatArray`를 `ByteArray`로 변환하여 indexer 도메인에 맞는 형식으로 제공 |
 
 ---
 
@@ -195,7 +202,7 @@ ArticleIndexDocument(
     title            ← AnalysisResult.refinedArticle.title
     content          ← AnalysisResult.refinedArticle.content
     keywords         ← AnalysisResult.keywords.map { it.keyword }
-    contentEmbedding ← EmbeddingPort.embed(refinedArticle.content)  // 외부 호출
+    contentEmbedding ← Embedder.embed(refinedArticle.content)  // 외부 호출
 
     // 필터 및 집계
     incidentTypes    ← AnalysisResult.incidentTypes
@@ -437,7 +444,7 @@ interface EmbeddingExecutor {
     suspend fun embed(text: String, model: EmbeddingModel, dimensions: Int): FloatArray
 }
 
-// ai-core: infrastructure/adapter/openai/OpenAiEmbeddingExecutor.kt (Adapter)
+// ai-core: adapter/executor/openai/OpenAiEmbeddingExecutor.kt (Adapter)
 @Component
 class OpenAiEmbeddingExecutor(
     private val embeddingModel: org.springframework.ai.openai.OpenAiEmbeddingModel
@@ -452,8 +459,8 @@ class OpenAiEmbeddingExecutor(
 **indexer에서의 사용**:
 
 ```kotlin
-// indexer: domain/port/EmbeddingPort.kt (Port)
-interface EmbeddingPort {
+// indexer: domain/port/Embedder.kt (Port)
+interface Embedder {
     suspend fun embed(text: String): ByteArray
 }
 
@@ -461,7 +468,7 @@ interface EmbeddingPort {
 @Component
 class EmbeddingAdapter(
     private val embeddingExecutor: EmbeddingExecutor  // ai-core 제공
-) : EmbeddingPort {
+) : Embedder {
     override suspend fun embed(text: String): ByteArray {
         val floats = embeddingExecutor.embed(
             text = text,
@@ -492,16 +499,16 @@ indexer/src/main/kotlin/com/vonkernel/lit/indexer/
 │   │   └── model/
 │   │       └── DebeziumOutboxEvent.kt              # CDC 이벤트 역직렬화 모델
 │   └── outbound/
-│       ├── OpenSearchIndexAdapter.kt               # SearchIndexPort 구현체
-│       ├── EmbeddingAdapter.kt                     # EmbeddingPort 구현체
+│       ├── OpenSearchIndexAdapter.kt               # SearchIndexer 구현체
+│       ├── EmbeddingAdapter.kt                     # Embedder 구현체
 │       └── config/
 │           └── OpenSearchClientConfig.kt           # OpenSearch 클라이언트 설정
 ├── domain/
 │   ├── assembler/
 │   │   └── IndexDocumentAssembler.kt               # 문서 변환 순수 함수
 │   ├── port/
-│   │   ├── SearchIndexPort.kt                      # OpenSearch 색인 계약
-│   │   └── EmbeddingPort.kt                        # 임베딩 생성 계약
+│   │   ├── SearchIndexer.kt                        # OpenSearch 색인 계약
+│   │   └── Embedder.kt                             # 임베딩 생성 계약
 │   ├── service/
 │   │   └── ArticleIndexingService.kt               # 인덱싱 오케스트레이션
 │   └── exception/
