@@ -2,6 +2,7 @@ package com.vonkernel.lit.persistence.mapper
 
 import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.persistence.TestFixtures
+import com.vonkernel.lit.persistence.jpa.mapper.LocationMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.offset
 import org.junit.jupiter.api.DisplayName

@@ -2,10 +2,10 @@ package com.vonkernel.lit.collector.domain.service
 
 import com.vonkernel.lit.collector.domain.exception.CollectionException
 import com.vonkernel.lit.collector.domain.model.ArticlePage
-import com.vonkernel.lit.collector.domain.port.NewsApiPort
+import com.vonkernel.lit.collector.domain.port.NewsFetcher
 import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.core.exception.MaxRetriesExceededException
-import com.vonkernel.lit.core.repository.ArticleRepository
+import com.vonkernel.lit.core.port.repository.ArticleRepository
 import com.vonkernel.lit.core.util.executeWithRetry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +16,7 @@ import java.time.format.DateTimeFormatter
 
 @Service
 class ArticleCollectionServiceImpl(
-    private val newsApiPort: NewsApiPort,
+    private val newsFetcher: NewsFetcher,
     private val articleRepository: ArticleRepository
 ) : ArticleCollectionService {
 
@@ -102,7 +102,7 @@ class ArticleCollectionServiceImpl(
                 logger.warn("Fetch failed for $date p$pageNo (Attempt $attempt). Retrying in ${nextDelay}ms.", e)
             }
         ) {
-            newsApiPort.fetchArticles(date, pageNo, pageSize)
+            newsFetcher.fetchArticles(date, pageNo, pageSize)
         }
     }
 

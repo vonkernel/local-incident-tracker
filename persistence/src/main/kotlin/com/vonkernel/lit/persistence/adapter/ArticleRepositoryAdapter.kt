@@ -2,8 +2,8 @@ package com.vonkernel.lit.persistence.adapter
 
 import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.persistence.jpa.JpaArticleRepository
-import com.vonkernel.lit.persistence.mapper.ArticleMapper
-import com.vonkernel.lit.core.repository.ArticleRepository
+import com.vonkernel.lit.persistence.jpa.mapper.ArticleMapper
+import com.vonkernel.lit.core.port.repository.ArticleRepository
 import org.springframework.stereotype.Repository
 
 @Repository

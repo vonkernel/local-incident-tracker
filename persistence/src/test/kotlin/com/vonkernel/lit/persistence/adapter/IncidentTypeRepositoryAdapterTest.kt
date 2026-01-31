@@ -1,6 +1,6 @@
 package com.vonkernel.lit.persistence.adapter
 
-import com.vonkernel.lit.persistence.entity.core.IncidentTypeEntity
+import com.vonkernel.lit.persistence.jpa.entity.article.IncidentTypeEntity
 import com.vonkernel.lit.persistence.jpa.JpaIncidentTypeRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName

@@ -146,7 +146,7 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 
 ```
 ┌──────────────────────────────────────────────┐
-│        Application Layer                     │
+│        Domain Service Layer                  │
 │  (PromptOrchestrator)                        │
 │  - Load Prompt → Template Substitution       │
 │  - Select Executor → Execute → Return Result │
@@ -170,7 +170,7 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 └──────────────────────────────────────────────┘
                     ↑ implements
 ┌──────────────────────────────────────────────┐
-│        Infrastructure Layer                  │
+│        Adapter Layer                         │
 │   ┌──────────────────────────────┐           │
 │   │ OpenAiPromptExecutor         │           │
 │   │ (Spring AI Integration)      │           │
@@ -184,8 +184,8 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 ```
 
 **Domain Layer**: 비즈니스 로직과 추상화 (Port, Model, Exception)
-**Application Layer**: 도메인 조율 및 워크플로우 (PromptOrchestrator)
-**Infrastructure Layer**: 외부 시스템 연동 (Spring AI, YAML 파일)
+**Domain Service Layer**: 도메인 조율 및 워크플로우 (PromptOrchestrator)
+**Adapter Layer**: 외부 시스템 연동 (Spring AI, YAML 파일)
 
 ### 핵심 컴포넌트
 
@@ -420,36 +420,37 @@ suspend fun analyzeArticle(article: Article): AnalysisResult {
 ```
 ai-core/
 ├── src/main/kotlin/com/vonkernel/lit/ai/
-│   ├── domain/                         # 도메인 계층 (비즈니스 로직)
-│   │   ├── model/                      # 도메인 모델
-│   │   │   ├── Prompt.kt               # 프롬프트 정의 (제네릭)
-│   │   │   ├── PromptParameters.kt     # 실행 파라미터
-│   │   │   ├── PromptExecutionResult.kt # 실행 결과
-│   │   │   ├── LlmProvider.kt          # Provider enum
-│   │   │   ├── LlmModel.kt             # Model enum
-│   │   │   ├── ExecutionMetadata.kt    # 실행 메타데이터
-│   │   │   └── TokenUsage.kt           # 토큰 사용량
-│   │   ├── port/                       # Port 인터페이스
-│   │   │   ├── PromptExecutor.kt       # LLM 실행 추상화
-│   │   │   └── PromptLoader.kt         # 프롬프트 로딩 추상화
-│   │   └── exception/                  # 예외 계층
-│   │       ├── AiCoreException.kt      # 최상위 예외 (sealed class)
-│   │       ├── PromptLoadException.kt
-│   │       ├── TemplateResolutionException.kt
-│   │       ├── LlmExecutionException.kt
-│   │       └── ...
-│   ├── application/                    # 애플리케이션 계층
-│   │   ├── PromptOrchestrator.kt       # 프롬프트 실행 조율
-│   │   └── PromptRequest.kt            # 요청 DTO
-│   └── infrastructure/                 # 인프라 계층 (외부 연동)
-│       ├── adapter/
-│       │   ├── openai/
-│       │   │   ├── OpenAiPromptExecutor.kt      # OpenAI 구현체
-│       │   │   └── OpenAiSpecificOptions.kt     # OpenAI 전용 옵션
-│       │   ├── YamlPromptLoader.kt              # YAML 로더
-│       │   └── YamlPromptData.kt                # YAML 파싱용 DTO
-│       └── config/
-│           └── AiCoreConfiguration.kt           # Spring 설정
+│   ├── adapter/                        # 어댑터 계층 (외부 연동)
+│   │   ├── executor/
+│   │   │   └── openai/
+│   │   │       ├── OpenAiPromptExecutor.kt      # OpenAI 구현체
+│   │   │       └── OpenAiSpecificOptions.kt     # OpenAI 전용 옵션
+│   │   └── prompt/
+│   │       ├── YamlPromptLoader.kt              # YAML 로더
+│   │       └── YamlPromptData.kt                # YAML 파싱용 DTO
+│   ├── config/
+│   │   └── AiCoreConfiguration.kt               # Spring 설정
+│   └── domain/                         # 도메인 계층 (비즈니스 로직)
+│       ├── model/                      # 도메인 모델
+│       │   ├── Prompt.kt               # 프롬프트 정의 (제네릭)
+│       │   ├── PromptParameters.kt     # 실행 파라미터
+│       │   ├── PromptExecutionResult.kt # 실행 결과
+│       │   ├── LlmProvider.kt          # Provider enum
+│       │   ├── LlmModel.kt             # Model enum
+│       │   ├── ExecutionMetadata.kt    # 실행 메타데이터
+│       │   └── TokenUsage.kt           # 토큰 사용량
+│       ├── port/                       # Port 인터페이스
+│       │   ├── PromptExecutor.kt       # LLM 실행 추상화
+│       │   └── PromptLoader.kt         # 프롬프트 로딩 추상화
+│       ├── service/                    # 도메인 서비스
+│       │   ├── PromptOrchestrator.kt   # 프롬프트 실행 조율
+│       │   └── PromptRequest.kt        # 요청 DTO
+│       └── exception/                  # 예외 계층
+│           ├── AiCoreException.kt      # 최상위 예외 (sealed class)
+│           ├── PromptLoadException.kt
+│           ├── TemplateResolutionException.kt
+│           ├── LlmExecutionException.kt
+│           └── ...
 ├── src/test/
 │   ├── kotlin/com/vonkernel/lit/ai/
 │   │   ├── domain/model/
@@ -546,7 +547,7 @@ ai-core/src/test/
 │   │   ├── YamlPromptLoaderTest.kt                    # Unit Test
 │   │   ├── OpenAiPromptExecutorTest.kt                # Unit Test (Mock)
 │   │   └── OpenAiPromptExecutorIntegrationTest.kt     # Integration Test (실제 API)
-│   └── application/
+│   └── domain/service/
 │       ├── PromptOrchestratorTest.kt                  # Unit Test (Mock)
 │       └── PromptOrchestratorIntegrationTest.kt       # Integration Test (실제 API)
 └── resources/

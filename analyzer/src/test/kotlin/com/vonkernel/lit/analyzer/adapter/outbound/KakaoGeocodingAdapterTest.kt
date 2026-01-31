@@ -8,7 +8,7 @@ import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordD
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordResponse
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoMeta
 import com.vonkernel.lit.core.entity.RegionType
-import com.vonkernel.lit.persistence.entity.analysis.AddressEntity
+import com.vonkernel.lit.persistence.jpa.entity.analysis.AddressEntity
 import com.vonkernel.lit.persistence.jpa.JpaAddressRepository
 import io.mockk.every
 import io.mockk.mockk

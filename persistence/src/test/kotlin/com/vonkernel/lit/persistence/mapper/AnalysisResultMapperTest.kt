@@ -1,7 +1,12 @@
 package com.vonkernel.lit.persistence.mapper
 
 import com.vonkernel.lit.persistence.TestFixtures
-import com.vonkernel.lit.persistence.entity.analysis.*
+import com.vonkernel.lit.persistence.jpa.entity.analysis.AddressMappingEntity
+import com.vonkernel.lit.persistence.jpa.entity.analysis.AnalysisResultEntity
+import com.vonkernel.lit.persistence.jpa.entity.analysis.ArticleKeywordEntity
+import com.vonkernel.lit.persistence.jpa.entity.analysis.IncidentTypeMappingEntity
+import com.vonkernel.lit.persistence.jpa.entity.analysis.UrgencyMappingEntity
+import com.vonkernel.lit.persistence.jpa.mapper.AnalysisResultMapper
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test

@@ -79,7 +79,7 @@ flowchart LR
     RA --> A2[UrgencyAnalyzer<br/>긴급도 평가]
     RA --> A3[KeywordAnalyzer<br/>키워드 추출]
     RA --> A4[TopicAnalyzer<br/>주제 추출]
-    RA --> A5[LocationAnalysisService<br/>위치 분석]
+    RA --> A5[LocationsExtractor<br/>위치 분석]
 
     A1 --> R["AnalysisResult"]
     A2 --> R
@@ -94,7 +94,7 @@ flowchart LR
 | `UrgencyAnalyzer` | 제목, 본문 | `Urgency` | 긴급도 단일 레이블 평가 |
 | `KeywordAnalyzer` | 요약 | `List<Keyword>` | 핵심 키워드 추출 |
 | `TopicAnalyzer` | 요약 | `Topic` | 주제 단일 추출 |
-| `LocationAnalysisService` | 제목, 본문 | `List<Location>` | 위치 추출 + 검증 + 지오코딩 |
+| `LocationsExtractor` | 제목, 본문 | `List<Location>` | 위치 추출 + 검증 + 지오코딩 |
 
 ### 위치 분석 3단계 파이프라인
 
@@ -104,7 +104,7 @@ flowchart LR
 flowchart LR
     T[제목 + 본문] --> S1[1. 추출<br/>LocationAnalyzer]
     S1 -->|ExtractedLocation 목록| S2[2. 검증<br/>LocationValidator]
-    S2 -->|검증된 ExtractedLocation| S3[3. 지오코딩<br/>GeocodingPort]
+    S2 -->|검증된 ExtractedLocation| S3[3. 지오코딩<br/>Geocoder]
     S3 --> L["List&lt;Location&gt;"]
 ```
 
@@ -112,7 +112,7 @@ flowchart LR
 |------|---------|------|
 | 1. 추출 | `LocationAnalyzer` | LLM으로 기사에서 위치 엔티티 추출 (`ADDRESS`, `LANDMARK`, `UNRESOLVABLE` 분류) |
 | 2. 검증 | `LocationValidator` | LLM으로 추출 결과 필터링, 정규화, 정제 |
-| 3. 지오코딩 | `GeocodingPort` | Kakao Local API로 좌표 변환 및 행정구역 정보 매핑 |
+| 3. 지오코딩 | `Geocoder` | Kakao Local API로 좌표 변환 및 행정구역 정보 매핑 |
 
 ---
 
@@ -135,13 +135,13 @@ graph TB
 
     subgraph Port ["Port Interfaces (Domain Contracts)"]
         P1["port/analyzer<br/>7개 Analyzer 인터페이스 + LLM I/O 모델"]
-        P2["port/geocoding<br/>GeocodingPort"]
+        P2["port/geocoding<br/>Geocoder"]
         P3["AnalysisResultRepository (shared)"]
     end
 
     subgraph Service ["Domain Service (FP - Orchestration)"]
         S1["ArticleAnalysisService<br/>분석 파이프라인 오케스트레이션"]
-        S2["LocationAnalysisService<br/>위치 분석 파이프라인 오케스트레이션"]
+        S2["ArticleRefiner, IncidentTypeExtractor,<br/>UrgencyExtractor, LocationsExtractor,<br/>KeywordsExtractor, TopicExtractor"]
     end
 
     subgraph Models ["Domain Models (Immutable)"]
@@ -158,8 +158,8 @@ graph TB
 - **Adapter Layer (Inbound)**: Kafka CDC 이벤트 수신, Debezium 이벤트 역직렬화
 - **Adapter Layer (Outbound/Analyzer)**: ai-core의 `PromptOrchestrator`를 사용한 LLM 기반 분석기 구현체
 - **Adapter Layer (Outbound/Geocoding)**: Kakao Local API 호출을 통한 지오코딩
-- **Port Interfaces**: 도메인 계약 (분석기 인터페이스 7개, 지오코딩 포트, LLM 입출력 모델)
-- **Domain Service**: 분석 파이프라인 오케스트레이션, 코루틴 병렬 실행 관리 (Port 인터페이스에만 의존)
+- **Port Interfaces**: 도메인 계약 (분석기 인터페이스 7개, Geocoder 포트, LLM 입출력 모델)
+- **Domain Service**: 분석 파이프라인 오케스트레이션 (`ArticleAnalysisService`) + 6개 Extractor 서비스, 코루틴 병렬 실행 관리 (Port 인터페이스에만 의존)
 - **Domain Models**: 불변 데이터 클래스 (shared 모듈 참조)
 
 ---
@@ -179,14 +179,20 @@ graph TB
 | `DefaultTopicAnalyzer` | `adapter/outbound/analyzer` | `TopicAnalyzer` 구현체. LLM으로 주제 추출 | `TopicExtractionInput` → `TopicExtractionOutput` |
 | `DefaultLocationAnalyzer` | `adapter/outbound/analyzer` | `LocationAnalyzer` 구현체. LLM으로 위치 엔티티 추출 | `LocationExtractionInput` → `LocationExtractionOutput` |
 | `DefaultLocationValidator` | `adapter/outbound/analyzer` | `LocationValidator` 구현체. LLM으로 위치 검증·정규화 | `LocationValidationInput` → `LocationExtractionOutput` |
-| `KakaoGeocodingAdapter` | `adapter/outbound/geocoding` | `GeocodingPort` 구현체. Kakao Local API를 호출하여 주소/키워드 지오코딩 수행 | 주소 문자열 → `List<Location>` (좌표 + 행정구역) |
+| `KakaoGeocodingAdapter` | `adapter/outbound/geocoding` | `Geocoder` 구현체. Kakao Local API를 호출하여 주소/키워드 지오코딩 수행 | 주소 문자열 → `List<Location>` (좌표 + 행정구역) |
 
 ### Domain Service
 
 | 컴포넌트 | 역할 | 입출력 |
 |---------|------|--------|
 | `ArticleAnalysisService` | 전체 분석 파이프라인 오케스트레이션. Phase 1(정제) → Phase 2(5개 병렬 분석) → 결과 집계 및 저장 | `Article` → `AnalysisResult` (PostgreSQL 저장) |
-| `LocationAnalysisService` | 위치 분석 3단계 파이프라인 오케스트레이션. 추출 → 검증 → 지오코딩 | 제목, 본문 → `List<Location>` |
+| `ArticleRefiner` | 기사 정제 오케스트레이션. LLM으로 원본 기사를 정제하여 RefinedArticle 생성 | `Article` → `RefinedArticle` |
+| `IncidentTypeExtractor` | 사건 유형 추출. DB 참조 데이터 + LLM 분류 | articleId, 제목, 본문 → `Set<IncidentType>` |
+| `UrgencyExtractor` | 긴급도 추출. DB 참조 데이터 + LLM 평가 | articleId, 제목, 본문 → `Urgency` |
+| `LocationsExtractor` | 위치 분석 3단계 파이프라인. 추출 → 검증 → 지오코딩 | articleId, 제목, 본문 → `List<Location>` |
+| `KeywordsExtractor` | 키워드 추출. LLM으로 요약에서 키워드 추출 | articleId, 요약 → `List<Keyword>` |
+| `TopicExtractor` | 주제 추출. LLM으로 요약에서 주제 추출 | articleId, 요약 → `Topic` |
+| `RetryableAnalysisService` | 분석 서비스 공통 재시도 로직 제공 (abstract class) | `withRetry()` 메서드 제공 |
 
 ### Port Interface
 
@@ -199,7 +205,7 @@ graph TB
 | `TopicAnalyzer` | `domain/port/analyzer` | 주제 추출 계약 |
 | `LocationAnalyzer` | `domain/port/analyzer` | 위치 엔티티 추출 계약 (ADDRESS/LANDMARK/UNRESOLVABLE 분류) |
 | `LocationValidator` | `domain/port/analyzer` | 위치 검증·필터링·정규화 계약 |
-| `GeocodingPort` | `domain/port/geocoding` | 지오코딩 외부 서비스 계약 (`geocodeByAddress`, `geocodeByKeyword`) |
+| `Geocoder` | `domain/port/geocoding` | 지오코딩 외부 서비스 계약 (`geocodeByAddress`, `geocodeByKeyword`) |
 
 ---
 
@@ -255,10 +261,16 @@ analyzer/src/main/kotlin/com/vonkernel/lit/analyzer/
     │   │       ├── LocationValidationInput.kt
     │   │       └── IncidentTypeItem.kt / UrgencyItem.kt
     │   └── geocoding/
-    │       └── GeocodingPort.kt
+    │       └── Geocoder.kt
     └── service/
         ├── ArticleAnalysisService.kt
-        └── LocationAnalysisService.kt
+        ├── ArticleRefiner.kt
+        ├── IncidentTypeExtractor.kt
+        ├── UrgencyExtractor.kt
+        ├── LocationsExtractor.kt
+        ├── KeywordsExtractor.kt
+        ├── TopicExtractor.kt
+        └── RetryableAnalysisService.kt
 
 analyzer/src/main/resources/
 ├── application.yml
@@ -404,7 +416,7 @@ analyzer/src/test/kotlin/com/vonkernel/lit/analyzer/
     │   └── DefaultLocationValidatorIntegrationTest.kt
     └── service/
         ├── ArticleAnalysisServiceTest.kt
-        └── LocationAnalysisServiceTest.kt
+        └── LocationsExtractorTest.kt
 ```
 
 ### 테스트 종류
@@ -414,7 +426,7 @@ analyzer/src/test/kotlin/com/vonkernel/lit/analyzer/
 외부 의존성을 MockK로 모킹하여 비즈니스 로직만 검증합니다.
 
 - `ArticleAnalysisServiceTest`: 2-Phase 파이프라인 오케스트레이션, 멱등성, 에러 처리
-- `LocationAnalysisServiceTest`: 위치 3단계 파이프라인 흐름, 지오코딩 실패 시 fallback
+- `LocationsExtractorTest`: 위치 3단계 파이프라인 흐름, 지오코딩 실패 시 fallback
 - `ArticleEventListenerTest`: Kafka 이벤트 처리, CDC 이벤트 필터링
 - `DefaultIncidentTypeAnalyzerTest`: 사건 유형 분류 로직
 - `DefaultUrgencyAnalyzerTest`: 긴급도 평가 로직
@@ -475,7 +487,7 @@ open analyzer/build/reports/tests/test/index.html
 
 ### 2. 위치 3단계 파이프라인
 
-**구조**: 추출(LocationAnalyzer) → 검증(LocationValidator) → 지오코딩(GeocodingPort)
+**구조**: 추출(LocationAnalyzer) → 검증(LocationValidator) → 지오코딩(Geocoder)
 
 **이유**:
 - LLM의 위치 추출 결과는 노이즈를 포함할 수 있음 (예: "해외", "전국" 등 지오코딩 불가 표현)

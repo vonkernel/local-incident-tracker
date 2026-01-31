@@ -36,50 +36,49 @@
 
 **Spring Component + Dependency Injection** (OOP):
 ```kotlin
-interface ArticleAnalyzer {
-    fun analyze(article: Article): AnalysisResult
-}
-
+// Orchestration service composes multiple extractors
 @Service
-class ArticleAnalyzerImpl(
-    private val llmService: LlmService,
-    private val geocodingService: GeocodingService
-) : ArticleAnalyzer {
-    override fun analyze(article: Article): AnalysisResult =
-        analyzeArticle(article)  // delegate to pure function
+class ArticleAnalysisService(
+    private val articleRefiner: ArticleRefiner,
+    private val incidentTypeExtractor: IncidentTypeExtractor,
+    private val urgencyExtractor: UrgencyExtractor,
+    private val locationsExtractor: LocationsExtractor,
+    private val keywordsExtractor: KeywordsExtractor,
+    private val topicExtractor: TopicExtractor,
+    private val analysisResultRepository: AnalysisResultRepository
+) {
+    suspend fun analyze(article: Article) {
+        analyzeArticle(article)
+            .let { analysisResultRepository.save(it) }
+    }
 }
 ```
 
 **Pure Functional Stream with Coroutines** (FP):
 
 ```kotlin
-// Pure function: immutable input → immutable output
-// No side effects, no external state mutation
-suspend fun analyzeArticle(article: Article): AnalysisResult = coroutineScope {
-    // Parallel execution of independent analyses via async/await
-    val disasterTypeDeferred = async { classifyDisasterType(article.body) }
-    val locationsDeferred = async { extractLocations(article.body) }
-    val urgencyDeferred = async { assessUrgency(article.body) }
+// 2-phase analysis: sequential refinement → parallel extraction
+private suspend fun analyzeArticle(article: Article): AnalysisResult = coroutineScope {
+    // Phase 1: Sequential article refinement via LLM
+    articleRefiner.process(article).let { refinedArticle ->
+        // Phase 2: Parallel extraction from refined content
+        val incidentTypes = async { incidentTypeExtractor.process(articleId, title, content) }
+        val urgency = async { urgencyExtractor.process(articleId, title, content) }
+        val locations = async { locationsExtractor.process(articleId, title, content) }
+        val keywords = async { keywordsExtractor.process(articleId, summary) }
+        val topic = async { topicExtractor.process(articleId, summary) }
 
-    // Await all results and compose into single output
-    AnalysisResult(
-        articleId = article.id,
-        disasterType = disasterTypeDeferred.await(),
-        locations = locationsDeferred.await(),
-        urgency = urgencyDeferred.await()
-    )
+        AnalysisResult(
+            articleId = article.articleId,
+            refinedArticle = refinedArticle,
+            incidentTypes = incidentTypes.await(),
+            urgency = urgency.await(),
+            keywords = keywords.await(),
+            topic = topic.await(),
+            locations = locations.await()
+        )
+    }
 }
-
-// Pure functions: same input always produces same output
-// LLM calls wrapped as suspending pure functions
-private suspend fun classifyDisasterType(text: String): DisasterType =
-    /* LLM invocation returns deterministic result for given text */
-
-private suspend fun extractLocations(text: String): List<Location> =
-    /* LLM invocation returns deterministic result for given text */
-
-private suspend fun assessUrgency(text: String): Urgency =
-    /* LLM invocation returns deterministic result for given text */
 ```
 
 **Functional Principles Applied**:
@@ -105,8 +104,8 @@ private suspend fun assessUrgency(text: String): Urgency =
 
 ### Hexagonal Foundation (Ports & Adapters)
 - **Domain Core**: Pure business logic, framework-independent
-- **Ports (Interfaces)**: Secondary ports define dependencies (DB, LLM, Kakao API)
-- **Adapters (Spring Beans)**: Implement ports, connect to real services
+- **Ports (Interfaces)**: Role-based naming (e.g., `NewsFetcher`, `Geocoder`, `PromptExecutor`) define dependencies
+- **Adapters (Spring Beans)**: Implement ports, connect to real services (e.g., `SafetyDataApiAdapter`, `KakaoGeocodingAdapter`, `OpenAiPromptExecutor`)
 
 ### CQRS Layering
 - **Write Side** (PostgreSQL): Single source of truth, transactional consistency via analyzer
@@ -131,7 +130,7 @@ Define Kotlin interfaces for each component within a module:
 
 **Deliverables**:
 - `{Module}Service` interfaces (what the module does)
-- `{External}Port` interfaces (what the module depends on)
+- Role-based port interfaces (e.g., `NewsFetcher`, `Geocoder`, `PromptExecutor`)
 - `{DomainType}` data classes (what the module produces/consumes)
 
 ### Phase 2: Test-Driven Development (TDD)
@@ -156,24 +155,30 @@ Implement pure functions first, wrap with Spring beans:
 
 1. **Pure Functions**: Business logic without side effects
    ```kotlin
-   fun classifyDisasterType(text: String): DisasterType
-   fun extractLocations(text: String): List<Location>
+   // Domain service extractors with retry support
+   class KeywordsExtractor(val keywordAnalyzer: KeywordAnalyzer) {
+       suspend fun process(articleId: String, summary: String): List<Keyword>
+   }
    ```
 
 2. **Spring Components**: Orchestrate pure functions, handle side effects
    ```kotlin
    @Service
-   class ArticleAnalyzer(val llmService: LlmService) {
-       fun analyze(article: Article) =
-           analyzeArticle(article)  // pure function
+   class ArticleAnalysisService(
+       val articleRefiner: ArticleRefiner,
+       val incidentTypeExtractor: IncidentTypeExtractor,
+       // ... other extractors
+   ) {
+       suspend fun analyze(article: Article) { /* orchestration */ }
+   }
    ```
 
 3. **Adapters**: Connect to infrastructure
    ```kotlin
    @Service
-   class ArticleRepository(val jpa: ArticleJpa) : ArticlePort {
+   class ArticleRepositoryAdapter(val jpa: JpaArticleRepository) : ArticleRepository {
        override fun save(article: Article) =
-           jpa.save(article.toEntity())
+           jpa.save(ArticleMapper.toEntity(article))
    }
    ```
 

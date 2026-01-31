@@ -1,15 +1,9 @@
 package com.vonkernel.lit.analyzer.domain.service
 
 import com.vonkernel.lit.analyzer.domain.exception.ArticleAnalysisException
-import com.vonkernel.lit.analyzer.domain.port.analyzer.IncidentTypeAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.KeywordAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.RefineArticleAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.TopicAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.UrgencyAnalyzer
 import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.core.entity.Article
-import com.vonkernel.lit.core.repository.AnalysisResultRepository
-import com.vonkernel.lit.core.util.executeWithRetry
+import com.vonkernel.lit.core.port.repository.AnalysisResultRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import org.slf4j.LoggerFactory
@@ -17,13 +11,14 @@ import org.springframework.stereotype.Service
 
 @Service
 class ArticleAnalysisService(
-    private val refineArticleAnalyzer: RefineArticleAnalyzer,
-    private val incidentTypeAnalyzer: IncidentTypeAnalyzer,
-    private val urgencyAnalyzer: UrgencyAnalyzer,
-    private val keywordAnalyzer: KeywordAnalyzer,
-    private val topicAnalyzer: TopicAnalyzer,
-    private val locationAnalysisService: LocationAnalysisService,
-    private val analysisResultRepository: AnalysisResultRepository
+    private val articleRefiner: ArticleRefiner,
+    private val incidentTypeExtractor: IncidentTypeExtractor,
+    private val urgencyExtractor: UrgencyExtractor,
+    private val locationsExtractor: LocationsExtractor,
+    private val keywordsExtractor: KeywordsExtractor,
+    private val topicExtractor: TopicExtractor,
+    private val analysisResultRepository: AnalysisResultRepository,
+
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -55,52 +50,27 @@ class ArticleAnalysisService(
     }
 
     private suspend fun analyzeArticle(article: Article): AnalysisResult = coroutineScope {
-        val articleId = article.articleId
+        articleRefiner.process(article).let { refinedArticle ->
+            val articleId = article.articleId
+            val title = refinedArticle.title
+            val content = refinedArticle.content
+            val summary = refinedArticle.summary
 
-        // Phase 1: Refine article (sequential)
-        val refinedArticle = withRetry("refineArticleAnalyzer", articleId) {
-            refineArticleAnalyzer.analyze(article)
-        }
+            val incidentTypes = async { incidentTypeExtractor.process(articleId, title, content) }
+            val urgency = async { urgencyExtractor.process(articleId, title, content) }
+            val locations = async { locationsExtractor.process(articleId, title, content) }
+            val keywords = async { keywordsExtractor.process(articleId, summary) }
+            val topic = async { topicExtractor.process(articleId, summary) }
 
-        // Phase 2: 5 parallel analyses based on refined article
-        val incidentTypes = async {
-            withRetry("incidentTypeAnalyzer", articleId) {
-                incidentTypeAnalyzer.analyze(refinedArticle.title, refinedArticle.content)
-            }
+            AnalysisResult(
+                articleId = article.articleId,
+                refinedArticle = refinedArticle,
+                incidentTypes = incidentTypes.await(),
+                urgency = urgency.await(),
+                keywords = keywords.await(),
+                topic = topic.await(),
+                locations = locations.await()
+            )
         }
-        val urgency = async {
-            withRetry("urgencyAnalyzer", articleId) {
-                urgencyAnalyzer.analyze(refinedArticle.title, refinedArticle.content)
-            }
-        }
-        val keywords = async {
-            withRetry("keywordAnalyzer", articleId) {
-                keywordAnalyzer.analyze(refinedArticle.summary)
-            }
-        }
-        val topic = async {
-            withRetry("topicAnalyzer", articleId) {
-                topicAnalyzer.analyze(refinedArticle.summary)
-            }
-        }
-        val locations = async {
-            locationAnalysisService.analyze(articleId, refinedArticle.title, refinedArticle.content)
-        }
-
-        AnalysisResult(
-            articleId = articleId,
-            refinedArticle = refinedArticle,
-            incidentTypes = incidentTypes.await(),
-            urgency = urgency.await(),
-            keywords = keywords.await(),
-            topic = topic.await(),
-            locations = locations.await()
-        )
     }
-
-    private suspend fun <T> withRetry(operationName: String, articleId: String, block: suspend () -> T): T =
-        executeWithRetry(maxRetries = 2, onRetry = { attempt, delay, e ->
-            log.warn("Retrying {} for article {} (attempt {}, delay {}ms): {}",
-                operationName, articleId, attempt, delay, e.message)
-        }, block = block)
 }

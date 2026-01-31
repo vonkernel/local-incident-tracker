@@ -1,6 +1,6 @@
 package com.vonkernel.lit.analyzer.domain.analyzer
 
-import com.vonkernel.lit.ai.application.PromptOrchestrator
+import com.vonkernel.lit.ai.domain.service.PromptOrchestrator
 import com.vonkernel.lit.ai.domain.model.ExecutionMetadata
 import com.vonkernel.lit.ai.domain.model.PromptExecutionResult
 import com.vonkernel.lit.ai.domain.model.TokenUsage
@@ -9,9 +9,7 @@ import com.vonkernel.lit.analyzer.domain.port.analyzer.model.UrgencyAssessmentIn
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.UrgencyAssessmentOutput
 import com.vonkernel.lit.analyzer.domain.port.analyzer.model.UrgencyItem
 import com.vonkernel.lit.core.entity.Urgency
-import com.vonkernel.lit.core.repository.UrgencyRepository
 import io.mockk.coEvery
-import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
@@ -22,8 +20,7 @@ import org.junit.jupiter.api.Test
 class DefaultUrgencyAnalyzerTest {
 
     private val promptOrchestrator: PromptOrchestrator = mockk()
-    private val urgencyRepository: UrgencyRepository = mockk()
-    private val analyzer = DefaultUrgencyAnalyzer(promptOrchestrator, urgencyRepository)
+    private val analyzer = DefaultUrgencyAnalyzer(promptOrchestrator)
 
     private val dummyMetadata = ExecutionMetadata(
         model = "test-model",
@@ -40,7 +37,6 @@ class DefaultUrgencyAnalyzerTest {
             Urgency(name = "중요", level = 2),
             Urgency(name = "정보", level = 1)
         )
-        every { urgencyRepository.findAll() } returns dbUrgencies
 
         val llmOutput = UrgencyAssessmentOutput(
             urgency = UrgencyItem(name = "긴급", level = 3)
@@ -55,7 +51,7 @@ class DefaultUrgencyAnalyzerTest {
         } returns PromptExecutionResult(llmOutput, dummyMetadata)
 
         // When
-        val result = analyzer.analyze("긴급 속보", "대형 화재가 발생했습니다.")
+        val result = analyzer.analyze(dbUrgencies, "긴급 속보", "대형 화재가 발생했습니다.")
 
         // Then
         assertThat(result.name).isEqualTo("긴급")
@@ -70,7 +66,6 @@ class DefaultUrgencyAnalyzerTest {
             Urgency(name = "긴급", level = 3),
             Urgency(name = "중요", level = 2)
         )
-        every { urgencyRepository.findAll() } returns dbUrgencies
 
         val llmOutput = UrgencyAssessmentOutput(
             urgency = UrgencyItem(name = "알수없는등급", level = 5)
@@ -85,7 +80,7 @@ class DefaultUrgencyAnalyzerTest {
         } returns PromptExecutionResult(llmOutput, dummyMetadata)
 
         // When
-        val result = analyzer.analyze("기사 제목", "기사 내용")
+        val result = analyzer.analyze(dbUrgencies, "기사 제목", "기사 내용")
 
         // Then
         assertThat(result.name).isEqualTo("알수없는등급")

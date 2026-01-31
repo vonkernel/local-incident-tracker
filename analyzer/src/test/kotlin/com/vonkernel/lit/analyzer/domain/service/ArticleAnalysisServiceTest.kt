@@ -1,10 +1,5 @@
 package com.vonkernel.lit.analyzer.domain.service
 
-import com.vonkernel.lit.analyzer.domain.port.analyzer.IncidentTypeAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.KeywordAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.RefineArticleAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.TopicAnalyzer
-import com.vonkernel.lit.analyzer.domain.port.analyzer.UrgencyAnalyzer
 import com.vonkernel.lit.core.entity.Address
 import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.core.entity.Article
@@ -16,7 +11,7 @@ import com.vonkernel.lit.core.entity.RegionType
 import com.vonkernel.lit.core.entity.RefinedArticle
 import com.vonkernel.lit.core.entity.Topic
 import com.vonkernel.lit.core.entity.Urgency
-import com.vonkernel.lit.core.repository.AnalysisResultRepository
+import com.vonkernel.lit.core.port.repository.AnalysisResultRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -32,12 +27,12 @@ import java.time.Instant
 @DisplayName("ArticleAnalysisService 테스트")
 class ArticleAnalysisServiceTest {
 
-    private val refineArticleAnalyzer: RefineArticleAnalyzer = mockk()
-    private val incidentTypeAnalyzer: IncidentTypeAnalyzer = mockk()
-    private val urgencyAnalyzer: UrgencyAnalyzer = mockk()
-    private val keywordAnalyzer: KeywordAnalyzer = mockk()
-    private val topicAnalyzer: TopicAnalyzer = mockk()
-    private val locationAnalysisService: LocationAnalysisService = mockk()
+    private val articleRefiner: ArticleRefiner = mockk()
+    private val incidentTypeExtractor: IncidentTypeExtractor = mockk()
+    private val urgencyExtractor: UrgencyExtractor = mockk()
+    private val locationsExtractor: LocationsExtractor = mockk()
+    private val keywordsExtractor: KeywordsExtractor = mockk()
+    private val topicExtractor: TopicExtractor = mockk()
     private val analysisResultRepository: AnalysisResultRepository = mockk()
 
     private lateinit var service: ArticleAnalysisService
@@ -71,19 +66,19 @@ class ArticleAnalysisServiceTest {
     @BeforeEach
     fun setUp() {
         service = ArticleAnalysisService(
-            refineArticleAnalyzer, incidentTypeAnalyzer, urgencyAnalyzer,
-            keywordAnalyzer, topicAnalyzer, locationAnalysisService,
+            articleRefiner, incidentTypeExtractor, urgencyExtractor,
+            locationsExtractor, keywordsExtractor, topicExtractor,
             analysisResultRepository
         )
     }
 
     private fun setupDefaultAnalyzerMocks(locations: List<Location> = emptyList()) {
-        coEvery { refineArticleAnalyzer.analyze(testArticle) } returns testRefinedArticle
-        coEvery { incidentTypeAnalyzer.analyze(testRefinedArticle.title, testRefinedArticle.content) } returns testIncidentTypes
-        coEvery { urgencyAnalyzer.analyze(testRefinedArticle.title, testRefinedArticle.content) } returns testUrgency
-        coEvery { keywordAnalyzer.analyze(testRefinedArticle.summary) } returns testKeywords
-        coEvery { topicAnalyzer.analyze(testRefinedArticle.summary) } returns testTopic
-        coEvery { locationAnalysisService.analyze(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns locations
+        coEvery { articleRefiner.process(testArticle) } returns testRefinedArticle
+        coEvery { incidentTypeExtractor.process(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns testIncidentTypes
+        coEvery { urgencyExtractor.process(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns testUrgency
+        coEvery { keywordsExtractor.process(testArticle.articleId, testRefinedArticle.summary) } returns testKeywords
+        coEvery { topicExtractor.process(testArticle.articleId, testRefinedArticle.summary) } returns testTopic
+        coEvery { locationsExtractor.process(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns locations
         every { analysisResultRepository.existsByArticleId(testArticle.articleId) } returns false
         every { analysisResultRepository.save(any()) } answers { firstArg() }
     }
