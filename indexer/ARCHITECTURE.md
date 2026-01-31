@@ -42,54 +42,54 @@ indexer는 analyzer가 생성한 분석 결과를 OpenSearch에 검색 최적화
 flowchart TD
     A[PostgreSQL<br/>analysis_result_outbox 테이블] -->|Debezium CDC| B[Kafka<br/>lit.public.analysis_result_outbox 토픽]
     B --> C[AnalysisResultEventListener<br/>배치 Kafka Consumer]
-    C --> D[ArticleIndexingService<br/>인덱싱 오케스트레이션]
+    C --> D[ArticleIndexingService<br/>배치 인덱싱 오케스트레이션]
     D --> E[IndexDocumentAssembler<br/>문서 변환]
-    D --> F[Embedder<br/>벡터 임베딩 생성]
-    E --> G[ArticleIndexDocument 생성]
+    D --> F[Embedder<br/>배치 벡터 임베딩 생성]
+    E --> G[ArticleIndexDocument 목록 생성]
     F --> G
-    G --> H[SearchIndexer<br/>OpenSearch 색인]
+    G --> H[ArticleIndexer<br/>OpenSearch bulk 색인]
 ```
 
 ---
 
 ## 인덱싱 파이프라인
 
-indexer의 인덱싱 파이프라인은 3단계 구조로 동작합니다.
+indexer의 인덱싱 파이프라인은 polling 배치 단위로 일괄 처리하는 3단계 구조로 동작합니다.
 
 ### 1단계: 이벤트 수신 및 역직렬화
 
-Kafka CDC 이벤트에서 Debezium Envelope을 파싱하고, `analysis_result_outbox` 테이블의 `payload` 필드(JSONB)에서 `AnalysisResult`를 역직렬화합니다.
+Kafka 배치로 수신한 CDC 이벤트를 파싱하고, `analysis_result_outbox` 테이블의 `payload` 필드(JSONB)에서 `AnalysisResult`를 역직렬화합니다. 역직렬화 실패 레코드는 로깅 후 skip합니다.
 
 | 단계 | 입력 | 출력 |
 |------|------|------|
-| AnalysisResultEventListener | `ConsumerRecord<String, String>` (Debezium CDC) | `AnalysisResult` |
+| AnalysisResultEventListener | `List<ConsumerRecord<String, String>>` (Debezium CDC 배치) | `List<AnalysisResult>` |
 
-### 2단계: 문서 조립 및 임베딩 생성 (병렬)
+### 2단계: 배치 임베딩 생성 및 문서 조립
 
-`AnalysisResult`를 `ArticleIndexDocument`로 변환합니다. CDC 페이로드에 `refinedArticle`(정제된 제목, 본문, 요약), `incidentTypes`, `urgency`, `keywords`, `topic`, `locations` 등 모든 분석 데이터가 포함되어 있으므로 별도의 Article 원본 조회가 불필요합니다.
-
-문서 조립과 임베딩 생성은 독립적이므로 코루틴 `async`를 통해 병렬로 실행합니다.
+배치 내 모든 `AnalysisResult`의 content를 추출하여 한 번의 API 호출로 임베딩을 생성합니다. 이후 각 `AnalysisResult`와 대응 임베딩을 조합하여 `ArticleIndexDocument`를 조립합니다.
 
 ```mermaid
 flowchart LR
-    AR[AnalysisResult] --> A1[IndexDocumentAssembler<br/>문서 필드 매핑]
-    AR --> A2[Embedder<br/>content → 벡터 임베딩]
-    A1 --> R["ArticleIndexDocument"]
-    A2 --> R
+    AR["List&lt;AnalysisResult&gt;"] --> C["contents 추출"]
+    C --> E["Embedder.embedAll<br/>배치 임베딩 생성"]
+    E --> Z["zip(embeddings, results)"]
+    AR --> Z
+    Z --> A["IndexDocumentAssembler<br/>문서 조립"]
+    A --> R["List&lt;ArticleIndexDocument&gt;"]
 ```
 
 | 작업 | 입력 | 출력 | 설명 |
 |------|------|------|------|
-| IndexDocumentAssembler | `AnalysisResult` | `ArticleIndexDocument` (embedding 제외) | 필드 매핑 및 데이터 변환 (순수 함수) |
-| Embedder | 정제된 본문 (content) | `ByteArray` (128 bytes) | OpenAI text-embedding-3-small 모델 호출 |
+| Embedder.embedAll | `List<String>` (content 목록) | `List<ByteArray?>` | 배치 임베딩 생성, 실패 시 전체 null 리스트 반환 |
+| IndexDocumentAssembler | `AnalysisResult` + `ByteArray?` | `ArticleIndexDocument` | 필드 매핑 및 데이터 변환 (순수 함수) |
 
-### 3단계: OpenSearch 색인
+### 3단계: OpenSearch bulk 색인
 
-조립된 `ArticleIndexDocument`를 OpenSearch에 색인합니다. `articleId`를 문서 ID로 사용하여 멱등성을 보장합니다 (동일 ID 재색인 시 기존 문서 덮어쓰기).
+조립된 `List<ArticleIndexDocument>`를 OpenSearch bulk API로 일괄 색인합니다. `articleId`를 문서 ID로 사용하여 멱등성을 보장합니다.
 
 | 단계 | 입력 | 출력 |
 |------|------|------|
-| SearchIndexer | `ArticleIndexDocument` | OpenSearch 색인 결과 |
+| ArticleIndexer.indexAll | `List<ArticleIndexDocument>` | OpenSearch bulk 색인 결과 |
 
 ---
 
@@ -107,14 +107,13 @@ graph TB
         OUT["Outbound Adapter"]
         IN --> IN1["AnalysisResultEventListener<br/>(Kafka Consumer)"]
         IN --> IN2["DebeziumOutboxEvent<br/>(CDC 이벤트 모델)"]
-        OUT --> OUT1["OpenSearchIndexAdapter<br/>(OpenSearch Client)"]
-        OUT --> OUT2["OpenAiEmbeddingAdapter<br/>(Spring AI Embedding)"]
+        OUT --> OUT1["OpenSearchArticleIndexer<br/>(OpenSearch Client)"]
+        OUT --> OUT2["EmbeddingAdapter<br/>(Spring AI Embedding)"]
     end
 
     subgraph Port ["Port Interfaces (Contracts)"]
-        P1["SearchIndexer"]
+        P1["ArticleIndexer"]
         P2["Embedder"]
-        P3["(확장 가능: 추가 Port)"]
     end
 
     subgraph Service ["Domain Service (FP - Orchestration)"]
@@ -140,7 +139,7 @@ graph TB
 **계층별 책임**:
 - **Adapter Layer**: Kafka CDC 이벤트 수신, OpenSearch 색인 실행, OpenAI Embedding API 호출
 - **Port Interfaces**: 외부 의존성 계약 (검색 색인, 임베딩 생성)
-- **Domain Service**: 인덱싱 파이프라인 오케스트레이션, 코루틴 병렬 실행 관리
+- **Domain Service**: 인덱싱 파이프라인 오케스트레이션, 배치 처리 관리
 - **Domain Core**: `AnalysisResult` → `ArticleIndexDocument` 변환 순수 함수
 - **Domain Models**: 인덱싱 입출력 데이터 클래스 (불변, shared 모듈 참조)
 
@@ -152,14 +151,14 @@ graph TB
 
 | 인터페이스 | 역할 | 시그니처 |
 |-----------|------|----------|
-| `SearchIndexer` | OpenSearch 색인 계약. `articleId`를 문서 ID로 사용하여 upsert 수행 → 멱등성 보장 | `index(document): Unit`, `delete(articleId): Unit` |
-| `Embedder` | 텍스트 임베딩 생성 계약. indexer 내부에서는 `ByteArray`로 추상화하여 ai-core의 `EmbeddingExecutor`(`FloatArray`) 와 추상화 경계를 분리 | `embed(text): ByteArray` |
+| `ArticleIndexer` | OpenSearch 색인 계약. `articleId`를 문서 ID로 사용하여 upsert 수행 → 멱등성 보장 | `index(document)`, `delete(articleId)`, `indexAll(documents)` |
+| `Embedder` | 텍스트 임베딩 생성 계약. indexer 내부에서는 `ByteArray`로 추상화하여 ai-core의 `EmbeddingExecutor`(`FloatArray`) 와 추상화 경계를 분리 | `embed(text): ByteArray`, `embedAll(texts): List<ByteArray?>` |
 
 ### Domain Service
 
 | 컴포넌트 | 역할 |
 |---------|------|
-| `ArticleIndexingService` | 인덱싱 파이프라인 오케스트레이터. `IndexDocumentAssembler`(문서 조립)와 `Embedder`(임베딩 생성)를 코루틴 `async`로 병렬 실행한 뒤, 결과를 합쳐 `SearchIndexer`로 색인. 임베딩 실패 시 `contentEmbedding = null`로 색인을 계속 진행하는 graceful degradation 전략 적용 |
+| `ArticleIndexingService` | 인덱싱 파이프라인 오케스트레이터. 단건 `index`와 배치 `indexAll`을 제공. `indexAll`은 배치 임베딩 → 문서 조립 → bulk 색인 파이프라인을 함수형 스타일로 수행. 임베딩 실패 시 `contentEmbedding = null`로 색인을 계속 진행하는 graceful degradation 전략 적용 |
 
 ### Domain Core
 
@@ -173,15 +172,15 @@ graph TB
 
 | 컴포넌트 | 역할 |
 |---------|------|
-| `AnalysisResultEventListener` | Kafka 배치 Consumer. `supervisorScope` + 개별 `async`로 배치 내 레코드 실패를 격리하여 하나의 레코드 실패가 배치 전체에 영향을 주지 않음. `executeWithRetry(maxRetries=1)` 적용 |
+| `AnalysisResultEventListener` | Kafka 배치 Consumer. 배치 내 레코드를 역직렬화/필터링하여 `List<AnalysisResult>`를 수집한 뒤 `articleIndexingService.indexAll()`로 일괄 처리. 역직렬화 실패 레코드는 로깅 후 skip |
 | `DebeziumOutboxEvent` | CDC 이벤트 역직렬화 모델. Debezium이 JSONB 컬럼을 문자열로 전달하므로 **이중 역직렬화** 수행 (1차: Debezium Envelope → 2차: `payload` JSON 문자열 → `AnalysisResult`). `op=c`(create), `op=r`(read/snapshot) 이벤트만 처리 |
 
 **Outbound**:
 
 | 컴포넌트 | 구현 Port | 역할 |
 |---------|-----------|------|
-| `OpenSearchIndexAdapter` | `SearchIndexer` | OpenSearch Java Client를 사용하여 문서 색인. `articleId`를 문서 ID로 사용하여 동일 ID 재색인 시 기존 문서 갱신 (upsert) |
-| `EmbeddingAdapter` | `Embedder` | ai-core의 `EmbeddingExecutor`에 위임하여 OpenAI `text-embedding-3-small` (128차원) 호출 후, 반환된 `FloatArray`를 `ByteArray`로 변환하여 indexer 도메인에 맞는 형식으로 제공 |
+| `OpenSearchArticleIndexer` | `ArticleIndexer` | OpenSearch Java Client를 사용하여 문서 색인. 단건 `index`와 bulk API 기반 `indexAll` 제공. `articleId`를 문서 ID로 사용하여 동일 ID 재색인 시 기존 문서 갱신 (upsert) |
+| `EmbeddingAdapter` | `Embedder` | ai-core의 `EmbeddingExecutor`에 위임하여 OpenAI `text-embedding-3-small` (128차원) 호출 후, 반환된 `FloatArray`를 `ByteArray`로 변환. 단건 `embed`와 배치 `embedAll` 제공. 배치 호출 실패 시 전체 null 리스트 반환 (graceful degradation) |
 
 ---
 
@@ -436,23 +435,24 @@ fun OutboxPayload.toAnalysisResult(objectMapper: ObjectMapper): AnalysisResult =
 
 Embedding API 호출은 `ai-core` 모듈의 Spring AI 2.0 인프라를 활용합니다.
 
-**ai-core에 추가할 Port/Adapter**:
+**ai-core Port/Adapter**:
 
 ```kotlin
 // ai-core: domain/port/EmbeddingExecutor.kt (Port)
 interface EmbeddingExecutor {
+    fun supports(provider: LlmProvider): Boolean
     suspend fun embed(text: String, model: EmbeddingModel, dimensions: Int): FloatArray
+    suspend fun embedAll(texts: List<String>, model: EmbeddingModel, dimensions: Int): List<FloatArray>
 }
 
 // ai-core: adapter/executor/openai/OpenAiEmbeddingExecutor.kt (Adapter)
 @Component
 class OpenAiEmbeddingExecutor(
-    private val embeddingModel: org.springframework.ai.openai.OpenAiEmbeddingModel
+    private val embeddingModel: SpringAiEmbeddingModel
 ) : EmbeddingExecutor {
-    override suspend fun embed(text: String, model: EmbeddingModel, dimensions: Int): FloatArray {
-        // Spring AI 2.0 EmbeddingModel API 사용
-        // text-embedding-3-small, dimensions=128
-    }
+    // Spring AI EmbeddingRequest는 List<String>을 받으므로
+    // embed: 단건 텍스트를 listOf(text)로 감싸서 호출
+    // embedAll: texts 리스트를 그대로 전달하여 배치 처리
 }
 ```
 
@@ -462,27 +462,23 @@ class OpenAiEmbeddingExecutor(
 // indexer: domain/port/Embedder.kt (Port)
 interface Embedder {
     suspend fun embed(text: String): ByteArray
+    suspend fun embedAll(texts: List<String>): List<ByteArray?>
 }
 
-// indexer: adapter/outbound/EmbeddingAdapter.kt (Adapter)
+// indexer: adapter/outbound/embedding/EmbeddingAdapter.kt (Adapter)
 @Component
 class EmbeddingAdapter(
-    private val embeddingExecutor: EmbeddingExecutor  // ai-core 제공
+    private val embeddingExecutors: List<EmbeddingExecutor>
 ) : Embedder {
-    override suspend fun embed(text: String): ByteArray {
-        val floats = embeddingExecutor.embed(
-            text = text,
-            model = EmbeddingModel.TEXT_EMBEDDING_3_SMALL,
-            dimensions = 128
-        )
-        return floatsToByteArray(floats)
-    }
+    // embed: EmbeddingExecutor.embed → FloatArray → ByteArray 변환
+    // embedAll: EmbeddingExecutor.embedAll → List<FloatArray> → List<ByteArray?> 변환
+    //           전체 API 호출 실패 시 모두 null 리스트 반환 (graceful degradation)
 }
 ```
 
 ### FloatArray → ByteArray 변환
 
-OpenSearch `knn_vector` 필드에 저장하기 위해 `FloatArray`를 `ByteArray`로 변환합니다. 이 변환은 `IndexDocumentAssembler` 또는 `EmbeddingAdapter`에서 순수 함수로 처리합니다.
+OpenSearch `knn_vector` 필드에 저장하기 위해 `FloatArray`를 `ByteArray`로 변환합니다. 이 변환은 `EmbeddingAdapter`에서 `ByteBuffer` (BIG_ENDIAN)을 사용하여 순수 함수로 처리합니다.
 
 ---
 
@@ -493,40 +489,43 @@ indexer/src/main/kotlin/com/vonkernel/lit/indexer/
 ├── IndexerApplication.kt
 ├── adapter/
 │   ├── inbound/
-│   │   ├── AnalysisResultEventListener.kt          # Kafka 배치 Consumer
-│   │   ├── config/
-│   │   │   └── DebeziumObjectMapperConfig.kt       # CDC JSON 역직렬화 설정
-│   │   └── model/
-│   │       └── DebeziumOutboxEvent.kt              # CDC 이벤트 역직렬화 모델
+│   │   └── consumer/
+│   │       ├── AnalysisResultEventListener.kt          # Kafka 배치 Consumer
+│   │       ├── config/
+│   │       │   └── DebeziumObjectMapperConfig.kt       # CDC JSON 역직렬화 설정
+│   │       └── model/
+│   │           └── DebeziumOutboxEvent.kt              # CDC 이벤트 역직렬화 모델
 │   └── outbound/
-│       ├── OpenSearchIndexAdapter.kt               # SearchIndexer 구현체
-│       ├── EmbeddingAdapter.kt                     # Embedder 구현체
-│       └── config/
-│           └── OpenSearchClientConfig.kt           # OpenSearch 클라이언트 설정
+│       ├── embedding/
+│       │   └── EmbeddingAdapter.kt                     # Embedder 구현체
+│       └── opensearch/
+│           ├── OpenSearchArticleIndexer.kt             # ArticleIndexer 구현체
+│           └── config/
+│               └── OpenSearchClientConfig.kt           # OpenSearch 클라이언트 설정
 ├── domain/
 │   ├── assembler/
-│   │   └── IndexDocumentAssembler.kt               # 문서 변환 순수 함수
+│   │   └── IndexDocumentAssembler.kt                   # 문서 변환 순수 함수
 │   ├── port/
-│   │   ├── SearchIndexer.kt                        # OpenSearch 색인 계약
-│   │   └── Embedder.kt                             # 임베딩 생성 계약
+│   │   ├── ArticleIndexer.kt                           # OpenSearch 색인 계약
+│   │   └── Embedder.kt                                 # 임베딩 생성 계약
 │   ├── service/
-│   │   └── ArticleIndexingService.kt               # 인덱싱 오케스트레이션
+│   │   └── ArticleIndexingService.kt                   # 인덱싱 오케스트레이션
 │   └── exception/
-│       └── ArticleIndexingException.kt             # 인덱싱 예외
+│       └── ArticleIndexingException.kt                 # 인덱싱 예외
 
 indexer/src/main/resources/
-├── application.yml
-└── opensearch/
-    └── article-index-mapping.json                  # OpenSearch 인덱스 매핑 정의
+└── application.yml
 
 indexer/src/test/kotlin/com/vonkernel/lit/indexer/
 ├── adapter/
 │   ├── inbound/
-│   │   ├── AnalysisResultEventListenerTest.kt
-│   │   └── model/
-│   │       └── DebeziumOutboxEventTest.kt
+│   │   └── consumer/
+│   │       ├── AnalysisResultEventListenerTest.kt
+│   │       └── model/
+│   │           └── DebeziumOutboxEventTest.kt
 │   └── outbound/
-│       └── OpenSearchIndexAdapterTest.kt
+│       └── opensearch/
+│           └── OpenSearchArticleIndexerTest.kt
 └── domain/
     ├── assembler/
     │   └── IndexDocumentAssemblerTest.kt
@@ -629,17 +628,18 @@ volumes에 `lit_opensearch_data` 추가 필요.
 indexer/src/test/kotlin/com/vonkernel/lit/indexer/
 ├── adapter/
 │   ├── inbound/
-│   │   ├── AnalysisResultEventListenerTest.kt          # Kafka 이벤트 처리 단위 테스트
-│   │   └── model/
-│   │       └── DebeziumOutboxEventTest.kt              # CDC 이벤트 역직렬화 테스트
+│   │   └── consumer/
+│   │       ├── AnalysisResultEventListenerTest.kt          # Kafka 배치 처리 단위 테스트
+│   │       └── model/
+│   │           └── DebeziumOutboxEventTest.kt              # CDC 이벤트 역직렬화 테스트
 │   └── outbound/
-│       ├── OpenSearchIndexAdapterTest.kt               # OpenSearch 색인 단위 테스트
-│       └── OpenSearchIndexAdapterIntegrationTest.kt    # OpenSearch 통합 테스트
+│       └── opensearch/
+│           └── OpenSearchArticleIndexerTest.kt             # OpenSearch 색인 단위 테스트
 └── domain/
     ├── assembler/
-    │   └── IndexDocumentAssemblerTest.kt               # 문서 변환 순수 함수 테스트
+    │   └── IndexDocumentAssemblerTest.kt                   # 문서 변환 순수 함수 테스트
     └── service/
-        └── ArticleIndexingServiceTest.kt               # 파이프라인 오케스트레이션 테스트
+        └── ArticleIndexingServiceTest.kt                   # 파이프라인 오케스트레이션 테스트
 ```
 
 ### 테스트 종류
@@ -655,15 +655,25 @@ indexer/src/test/kotlin/com/vonkernel/lit/indexer/
   - `UNKNOWN` 코드 필터링 (jurisdictionCodes에서 제외)
   - 시간 변환 정확성 (Instant → ZonedDateTime)
 - `ArticleIndexingServiceTest`: 파이프라인 오케스트레이션, 멱등성, 에러 처리
-  - 정상 흐름: 문서 조립 + 임베딩 (병렬) → 색인
-  - 임베딩 실패 시 graceful degradation (embedding null로 색인)
-- `AnalysisResultEventListenerTest`: Kafka 이벤트 처리, CDC 이벤트 필터링
-  - CREATE 이벤트(`op=c`, `op=r`)만 처리
-  - 역직렬화 실패 시 로깅 후 skip
-  - 배치 처리 중 개별 레코드 실패 격리
+  - 단건 정상 흐름: 임베딩 생성 → 문서 조립 → 색인
+  - 단건 임베딩 실패 시 graceful degradation (embedding null로 색인)
+  - 배치 정상 흐름: `indexAll`로 배치 임베딩 → 문서 조립 → bulk 색인
+  - 배치 임베딩 실패 시 전체 null embedding으로 색인 계속 진행
+  - 배치 색인 실패 시 예외 전파
+  - 빈 리스트 입력 시 아무 작업 안 함
+- `AnalysisResultEventListenerTest`: Kafka 이벤트 배치 처리, CDC 이벤트 필터링
+  - CREATE 이벤트(`op=c`, `op=r`) 배치 수집 후 `indexAll` 호출
+  - non-create 이벤트 필터링 (indexAll 호출 안 함)
+  - 역직렬화 실패 레코드 skip 후 유효 레코드만 배치 처리
+  - 배치 인덱싱 실패 시 예외 전파 없이 로깅
 - `DebeziumOutboxEventTest`: CDC 이벤트 역직렬화 정확성
   - Debezium Envelope 파싱
   - `payload` 필드 이중 역직렬화 (JSON 문자열 → AnalysisResult)
+- `OpenSearchArticleIndexerTest`: OpenSearch 색인 단위 테스트
+  - 단건 `index` 호출 검증 (IndexRequest 파라미터)
+  - 단건 `delete` 호출 검증
+  - `indexAll` bulk API 호출 검증
+  - 빈 리스트 입력 시 bulk 호출 안 함
 
 #### 통합 테스트
 
@@ -730,14 +740,30 @@ indexer/src/test/kotlin/com/vonkernel/lit/indexer/
 - Kafka at-least-once 전달 + OpenSearch upsert = 멱등한 인덱싱
 - analyzer에서 기사 재분석 시에도 동일 메커니즘으로 인덱스 갱신
 
-### 5. 에러 핸들링 전략
+### 5. 배치 처리 전략
 
-- **배치 내 개별 레코드 격리**: `supervisorScope` + 개별 `async`로 하나의 레코드 실패가 배치 전체에 영향을 주지 않음
-- **재시도**: Kafka Consumer 레벨에서 `executeWithRetry(maxRetries=1)` 적용
-- **임베딩 실패 허용**: 임베딩 생성 실패 시 null로 대체하여 색인 계속 진행
-- **`ArticleIndexingException`**: 인덱싱 실패 시 `articleId`를 포함한 구조화된 예외 로깅
+**방식**: Kafka polling 배치 단위로 임베딩 API 호출과 OpenSearch 색인을 일괄 처리
 
-### 6. OpenSearch 인덱스 매핑 외부화
+**메커니즘**:
+- `AnalysisResultEventListener`가 배치 내 레코드를 역직렬화/필터링하여 `List<AnalysisResult>` 수집
+- `ArticleIndexingService.indexAll`이 배치 임베딩(`embedAll`) → 문서 조립(`zip` + `assemble`) → bulk 색인(`indexAll`) 파이프라인 실행
+- `EmbeddingAdapter.embedAll`: 한 번의 OpenAI API 호출로 배치 내 모든 텍스트 임베딩 생성
+- `OpenSearchArticleIndexer.indexAll`: OpenSearch bulk API로 배치 내 모든 문서 일괄 색인
+- 배치 임베딩 실패 시 전체 null 리스트로 대체하여 색인 계속 진행 (graceful degradation)
+
+**이유**:
+- 단건 API 호출 대비 네트워크 오버헤드 감소
+- OpenSearch bulk API는 단건 index 대비 처리량이 높음
+- OpenAI Embedding API는 List<String>을 기본 지원하여 배치 호출 자연스러움
+
+### 6. 에러 핸들링 전략
+
+- **역직렬화 실패 격리**: 배치 내 개별 레코드의 파싱 실패는 로깅 후 skip, 유효 레코드만 배치 처리
+- **배치 인덱싱 실패**: `runCatching`으로 감싸 예외 전파 없이 로깅
+- **임베딩 실패 허용**: 배치 임베딩 전체 실패 시 null로 대체하여 색인 계속 진행
+- **`ArticleIndexingException`**: 단건 인덱싱 실패 시 `articleId`를 포함한 구조화된 예외 로깅
+
+### 7. OpenSearch 인덱스 매핑 외부화
 
 **방식**: 인덱스 매핑을 `resources/opensearch/article-index-mapping.json`에 JSON 파일로 관리
 
@@ -761,20 +787,20 @@ indexer/src/test/kotlin/com/vonkernel/lit/indexer/
 
 | API | 용도 | 인증 |
 |-----|------|------|
-| OpenAI Embedding API | 텍스트 벡터 임베딩 생성 (`text-embedding-3-small`, 128차원) | `SPRING_AI_OPENAI_API_KEY` |
+| OpenAI Embedding API | 텍스트 벡터 임베딩 생성 (`text-embedding-3-small`, 128차원) | `SPRING_AI_OPENAI_API_KEY` 환경변수 |
 
 ### 주요 라이브러리
 
 | 라이브러리 | 용도 |
 |----------|------|
 | Spring Boot 4.0 | 프레임워크 |
-| Spring Kafka | Kafka Consumer (배치 리스너) |
+| Spring Boot Starter Kafka | Kafka Consumer (배치 리스너, auto-configuration) |
 | OpenSearch Java Client 3.4 | OpenSearch 색인 및 인덱스 관리 |
 | Spring AI 2.0 (OpenAI) | OpenAI Embedding API 호출 (ai-core 모듈 통해) |
-| Kotlin Coroutines | 비동기 병렬 처리 (async/await) |
+| Kotlin Coroutines | 비동기 처리 |
 | Jackson | JSON 역직렬화 (CDC 이벤트, AnalysisResult 페이로드) |
 | MockK | 테스트 모킹 |
 
 ---
 
-**Tech Stack**: Kotlin 2.21 | Spring Boot 4.0 | Coroutines | Spring Kafka | OpenSearch 3.3 | Spring AI 2.0 | OpenAI text-embedding-3-small
+**Tech Stack**: Kotlin 2.21 | Spring Boot 4.0 | Coroutines | Spring Boot Starter Kafka | OpenSearch 3.3 | Spring AI 2.0 | OpenAI text-embedding-3-small
