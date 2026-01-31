@@ -9,6 +9,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing
 @EnableJpaRepositories(
     basePackages = ["com.vonkernel.lit.persistence.jpa"]
 )
-@EntityScan(basePackages = ["com.vonkernel.lit.persistence.entity"])
+@EntityScan(basePackages = ["com.vonkernel.lit.persistence.jpa.entity"])
 @EnableJpaAuditing
 class JpaConfig
