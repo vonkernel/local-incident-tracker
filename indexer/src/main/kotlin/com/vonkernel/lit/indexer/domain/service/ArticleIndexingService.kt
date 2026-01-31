@@ -18,7 +18,7 @@ class ArticleIndexingService(
     suspend fun index(analysisResult: AnalysisResult) {
         log.info("Starting indexing for article: {}", analysisResult.articleId)
 
-        runCatching { embedder.embed(analysisResult.refinedArticle.content) }
+        runCatching { embedder.embed(analysisResult.refinedArticle.summary) }
             .onFailure { log.warn("Embedding failed for article {}, proceeding without: {}", analysisResult.articleId, it.message) }
             .getOrNull()
             .let { embedding -> IndexDocumentAssembler.assemble(analysisResult, embedding) }
