@@ -16,8 +16,8 @@ import java.time.format.DateTimeFormatter
 
 object SearchQueryBuilder {
 
-    /** cosinesimil score 0.875 = cosine similarity ≥ 0.75 */
-    private const val KNN_MIN_SCORE = 0.75f
+    /** cosinesimil score 0.8 = cosine similarity ≥ 0.6 */
+    private const val KNN_MIN_SCORE = 0.8f
 
     /** semantic search 시 BM25:kNN ≈ 20:80 비중 조정 */
     private const val BM25_BOOST_WITH_SEMANTIC = 0.2f
