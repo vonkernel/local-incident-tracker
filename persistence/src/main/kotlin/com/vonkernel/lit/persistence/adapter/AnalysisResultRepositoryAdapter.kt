@@ -1,6 +1,9 @@
 package com.vonkernel.lit.persistence.adapter
 
 import com.vonkernel.lit.core.entity.AnalysisResult
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import com.vonkernel.lit.persistence.jpa.entity.analysis.AddressEntity
 import com.vonkernel.lit.persistence.jpa.entity.analysis.AddressMappingEntity
 import com.vonkernel.lit.persistence.jpa.entity.analysis.AnalysisResultEntity
@@ -45,11 +48,19 @@ class AnalysisResultRepositoryAdapter(
     }
 
     @Transactional
-    override fun save(analysisResult: AnalysisResult): AnalysisResult =
-        buildAnalysisResultEntity(analysisResult)
+    override fun save(analysisResult: AnalysisResult, articleUpdatedAt: Instant?): AnalysisResult =
+        buildAnalysisResultEntity(analysisResult).apply {
+            this.articleUpdatedAt = articleUpdatedAt?.let { ZonedDateTime.ofInstant(it, ZoneOffset.UTC) }
+        }
             .let { jpaAnalysisResultRepository.save(it) }
             .also { jpaAnalysisResultOutboxRepository.save(outboxMapper.toPersistenceModel(analysisResult)) }
             .let { AnalysisResultMapper.toDomainModel(it) }
+
+    @Transactional(readOnly = true)
+    override fun findArticleUpdatedAtByArticleId(articleId: String): Instant? =
+        jpaAnalysisResultRepository.findByArticleId(articleId)
+            ?.articleUpdatedAt
+            ?.toInstant()
 
     private fun buildAnalysisResultEntity(analysisResult: AnalysisResult): AnalysisResultEntity =
         AnalysisResultEntity(articleId = analysisResult.articleId).apply {

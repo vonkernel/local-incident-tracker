@@ -36,8 +36,13 @@ server:
 kafka:
   topic:
     article-events: ${KAFKA_ARTICLE_EVENTS_TOPIC:lit.public.article}
+    article-events-dlq: ${KAFKA_ARTICLE_EVENTS_DLQ_TOPIC:lit.analyzer.article-events.dlq}
   consumer:
     group-id: ${KAFKA_CONSUMER_GROUP_ID:analyzer-group}
+  dlq:
+    max-retries: ${DLQ_MAX_RETRIES:3}
+    consumer:
+      group-id: ${DLQ_CONSUMER_GROUP_ID:analyzer-dlq-group}
 
 kakao:
   api:

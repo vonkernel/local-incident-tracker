@@ -80,6 +80,7 @@ CREATE TABLE analysis_result (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     article_id VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    article_updated_at TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (article_id) REFERENCES article(article_id) ON DELETE CASCADE
 );
 

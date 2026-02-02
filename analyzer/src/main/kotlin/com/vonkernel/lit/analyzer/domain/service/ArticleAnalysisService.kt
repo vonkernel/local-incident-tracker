@@ -4,6 +4,7 @@ import com.vonkernel.lit.analyzer.domain.exception.ArticleAnalysisException
 import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.core.port.repository.AnalysisResultRepository
+import java.time.Instant
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import org.slf4j.LoggerFactory
@@ -22,14 +23,14 @@ class ArticleAnalysisService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    suspend fun analyze(article: Article) {
+    suspend fun analyze(article: Article, articleUpdatedAt: Instant? = null) {
         log.info("Starting analysis for article: {}", article.articleId)
 
         try {
             ensureNoExistingAnalysis(article.articleId)
 
             analyzeArticle(article)
-                .let { analysisResultRepository.save(it) }
+                .let { analysisResultRepository.save(it, articleUpdatedAt) }
 
             log.info("Analysis completed and saved for article: {}", article.articleId)
         } catch (e: Exception) {

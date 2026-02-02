@@ -41,7 +41,10 @@ data class ArticlePayload(
     val content: String,
 
     @param:JsonProperty("source_url")
-    val sourceUrl: String? = null
+    val sourceUrl: String? = null,
+
+    @param:JsonProperty("updated_at")
+    val updatedAt: String? = null
 )
 
 fun ArticlePayload.toArticle(): Article =

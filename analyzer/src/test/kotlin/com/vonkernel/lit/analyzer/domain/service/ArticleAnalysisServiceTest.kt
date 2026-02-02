@@ -80,7 +80,7 @@ class ArticleAnalysisServiceTest {
         coEvery { topicExtractor.process(testArticle.articleId, testRefinedArticle.summary) } returns testTopic
         coEvery { locationsExtractor.process(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns locations
         every { analysisResultRepository.existsByArticleId(testArticle.articleId) } returns false
-        every { analysisResultRepository.save(any()) } answers { firstArg() }
+        every { analysisResultRepository.save(any(), any()) } answers { firstArg() }
     }
 
     @Test
@@ -120,7 +120,7 @@ class ArticleAnalysisServiceTest {
         // Then
         verify(exactly = 1) { analysisResultRepository.existsByArticleId(testArticle.articleId) }
         verify(exactly = 1) { analysisResultRepository.deleteByArticleId(testArticle.articleId) }
-        verify(exactly = 1) { analysisResultRepository.save(any()) }
+        verify(exactly = 1) { analysisResultRepository.save(any(), any()) }
     }
 
     @Test
