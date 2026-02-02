@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: searcher
+
+server:
+  port: 8080
+
+opensearch:
+  host: ${OPENSEARCH_HOST:localhost}
+  port: ${OPENSEARCH_PORT:9200}
+  index-name: ${OPENSEARCH_INDEX_NAME:articles}
