@@ -27,8 +27,6 @@ class ArticleAnalysisService(
         log.info("Starting analysis for article: {}", article.articleId)
 
         try {
-            ensureNoExistingAnalysis(article.articleId)
-
             analyzeArticle(article)
                 .let { analysisResultRepository.save(it, articleUpdatedAt) }
 
@@ -40,13 +38,6 @@ class ArticleAnalysisService(
                 message = "Analysis failed for article ${article.articleId}",
                 cause = e
             )
-        }
-    }
-
-    private fun ensureNoExistingAnalysis(articleId: String) {
-        if (analysisResultRepository.existsByArticleId(articleId)) {
-            log.info("Existing analysis found for article: {}, deleting before re-analysis", articleId)
-            analysisResultRepository.deleteByArticleId(articleId)
         }
     }
 

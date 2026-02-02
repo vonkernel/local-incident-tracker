@@ -35,6 +35,6 @@ class DlqKafkaConsumerConfig(
         ConcurrentKafkaListenerContainerFactory<String, String>().apply {
             setConsumerFactory(dlqConsumerFactory())
             containerProperties.ackMode = ContainerProperties.AckMode.RECORD
-            containerProperties.pollTimeout = 60_000L
+            containerProperties.pollTimeout = 10_000L
         }
 }

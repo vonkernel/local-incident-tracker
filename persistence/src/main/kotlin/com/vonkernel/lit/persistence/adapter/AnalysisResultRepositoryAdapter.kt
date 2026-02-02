@@ -36,26 +36,25 @@ class AnalysisResultRepositoryAdapter(
     private val outboxMapper: AnalysisResultOutboxMapper
 ) : AnalysisResultRepository {
 
-    @Transactional(readOnly = true)
-    override fun existsByArticleId(articleId: String): Boolean =
-        jpaAnalysisResultRepository.findByArticleId(articleId) != null
-
-    @Transactional
-    override fun deleteByArticleId(articleId: String) {
+    private fun deleteByArticleId(articleId: String) {
         jpaAnalysisResultOutboxRepository.deleteByArticleId(articleId)
         jpaAnalysisResultRepository.findByArticleId(articleId)?.let {
             jpaAnalysisResultRepository.delete(it)
+            jpaAnalysisResultRepository.flush()
         }
     }
 
     @Transactional
-    override fun save(analysisResult: AnalysisResult, articleUpdatedAt: Instant?): AnalysisResult =
-        buildAnalysisResultEntity(analysisResult).apply {
+    override fun save(analysisResult: AnalysisResult, articleUpdatedAt: Instant?): AnalysisResult {
+        deleteByArticleId(analysisResult.articleId)
+
+        return buildAnalysisResultEntity(analysisResult).apply {
             this.articleUpdatedAt = articleUpdatedAt?.let { ZonedDateTime.ofInstant(it, ZoneOffset.UTC) }
         }
             .let { jpaAnalysisResultRepository.save(it) }
             .also { jpaAnalysisResultOutboxRepository.save(outboxMapper.toPersistenceModel(analysisResult)) }
             .let { AnalysisResultMapper.toDomainModel(it) }
+    }
 
     @Transactional(readOnly = true)
     override fun findArticleUpdatedAtByArticleId(articleId: String): Instant? =
