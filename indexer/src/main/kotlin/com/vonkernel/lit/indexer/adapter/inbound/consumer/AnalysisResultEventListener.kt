@@ -39,8 +39,13 @@ class AnalysisResultEventListener(
     }
 
     private fun parseRecord(record: ConsumerRecord<String, String>): AnalysisResult? {
+        val rawValue = record.value() ?: run {
+            log.debug("Ignoring tombstone record, offset={}", record.offset())
+            return null
+        }
+
         return try {
-            val envelope = objectMapper.readValue(record.value(), DebeziumOutboxEnvelope::class.java)
+            val envelope = objectMapper.readValue(rawValue, DebeziumOutboxEnvelope::class.java)
             if (envelope.op !in CREATE_OPS) {
                 log.debug("Ignoring non-create CDC event, offset={}", record.offset())
                 return null
