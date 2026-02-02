@@ -4,14 +4,11 @@ import com.vonkernel.lit.searcher.domain.model.ProximityFilter
 import com.vonkernel.lit.searcher.domain.model.RegionFilter
 import com.vonkernel.lit.searcher.domain.model.SearchCriteria
 import com.vonkernel.lit.searcher.domain.model.SortType
-import org.opensearch.client.opensearch._types.FieldValue
-import org.opensearch.client.opensearch._types.SortOptions
-import org.opensearch.client.opensearch._types.SortOrder
-import org.opensearch.client.opensearch._types.DistanceUnit
-import org.opensearch.client.opensearch._types.GeoDistanceType
-import org.opensearch.client.opensearch._types.query_dsl.BoolQuery
-import org.opensearch.client.opensearch._types.query_dsl.Query
 import org.opensearch.client.json.JsonData
+import org.opensearch.client.opensearch._types.*
+import org.opensearch.client.opensearch._types.query_dsl.Operator
+import org.opensearch.client.opensearch._types.query_dsl.Query
+import org.opensearch.client.opensearch._types.query_dsl.TextQueryType
 import org.opensearch.client.opensearch.core.SearchRequest
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -19,30 +16,42 @@ import java.time.format.DateTimeFormatter
 
 object SearchQueryBuilder {
 
+    /** cosinesimil score 0.875 = cosine similarity ≥ 0.75 */
+    private const val KNN_MIN_SCORE = 0.75f
+
+    /** semantic search 시 BM25:kNN ≈ 20:80 비중 조정 */
+    private const val BM25_BOOST_WITH_SEMANTIC = 0.2f
+    private const val KNN_BOOST = 10.0f
+
+    /** hybrid 쿼리 점수 정규화를 위한 search pipeline */
+    private const val HYBRID_SEARCH_PIPELINE = "hybrid-search-pipeline"
+
     fun build(criteria: SearchCriteria, queryEmbedding: ByteArray?, indexName: String): SearchRequest {
-        val boolQuery = BoolQuery.Builder()
+        // 1. 필터 구성 (AND 조건)
+        val filterQueries = buildFilters(criteria)
 
-        buildTextQuery(criteria, boolQuery)
-        buildSemanticQuery(queryEmbedding, criteria.size, boolQuery)
-        buildJurisdictionCodeFilter(criteria.jurisdictionCode, boolQuery)
-        buildAddressQueryFilter(criteria.addressQuery, boolQuery)
-        buildRegionFilter(criteria.region, boolQuery)
-        buildProximityFilter(criteria.proximity, boolQuery)
-        buildIncidentTypesFilter(criteria.incidentTypes, boolQuery)
-        buildUrgencyFilter(criteria.urgencyLevel, boolQuery)
-        buildDateRangeFilter(criteria, boolQuery)
+        // 2. 텍스트 쿼리 구성 (multiMatch OR kNN)
+        //    semantic 검색 시 필터를 sub-query 내부에 pre-filter로 적용
+        val textQuery = buildTextQuery(criteria, queryEmbedding, filterQueries)
 
-        val finalQuery = boolQuery.build()
-        val isEmptyQuery = finalQuery.must().isEmpty()
-                && finalQuery.filter().isEmpty()
-                && finalQuery.should().isEmpty()
+        // 3. 최종 쿼리 조합
+        //    semantic 활성화 시 필터가 이미 sub-query 내부에 적용됨 (pre-filter)
+        val isHybrid = queryEmbedding != null && textQuery != null
 
-        return SearchRequest.Builder()
-            .index(indexName)
-            .query { q ->
-                if (isEmptyQuery) q.matchAll { it }
-                else q.bool(finalQuery)
+        val topLevelQuery = if (textQuery != null && filterQueries.isNotEmpty() && !isHybrid) {
+            Query.Builder().bool { b ->
+                b.must(textQuery).filter(filterQueries)
+            }.build()
+        } else textQuery
+            ?: if (filterQueries.isNotEmpty()) {
+                Query.Builder().bool { b -> b.filter(filterQueries) }.build()
+            } else {
+                Query.Builder().matchAll { it }.build()
             }
+
+        val requestBuilder = SearchRequest.Builder()
+            .index(indexName)
+            .query(topLevelQuery)
             .from(criteria.page * criteria.size)
             .size(criteria.size)
             .sort(buildSort(criteria))
@@ -51,47 +60,96 @@ object SearchQueryBuilder {
                     .fields("content") { it }
                     .fields("keywords") { it }
             }
-            .build()
+
+        // hybrid 쿼리 사용 시 점수 정규화 pipeline 적용
+        if (isHybrid) {
+            requestBuilder.pipeline(HYBRID_SEARCH_PIPELINE)
+        }
+
+        return requestBuilder.build()
     }
 
-    private fun buildTextQuery(criteria: SearchCriteria, boolQuery: BoolQuery.Builder) {
-        val query = criteria.query ?: return
+    /**
+     * 텍스트 쿼리 구성.
+     * - non-semantic: multiMatch(AND, best_fields)
+     * - semantic: hybrid { multiMatch(AND, boost=0.2), knn(minScore, boost=10.0) }
+     * - query 없음: null
+     */
+    private fun buildTextQuery(
+        criteria: SearchCriteria,
+        queryEmbedding: ByteArray?,
+        filterQueries: List<Query>,
+    ): Query? {
+        val query = criteria.query
+        val hasText = !query.isNullOrBlank()
+        val hasSemantic = queryEmbedding != null
 
-        val multiMatch = Query.Builder().multiMatch { mm ->
+        if (!hasText) return null
+
+        val multiMatchQuery = Query.Builder().multiMatch { mm ->
             mm.query(query)
                 .fields("title^3", "keywords^2", "content")
+                .operator(Operator.And)
+                .type(TextQueryType.BestFields)
         }.build()
 
-        when (criteria.sortBy) {
-            SortType.RELEVANCE -> boolQuery.must(multiMatch)
-            SortType.DATE, SortType.DISTANCE -> boolQuery.filter(multiMatch)
+        // kNN에 pre-filter 적용: 필터 조건 만족하는 문서 집합 내에서만 벡터 검색
+        val knnQuery = if (hasSemantic) {
+            val vector = byteArrayToFloats(queryEmbedding)
+            val preFilter = if (filterQueries.isNotEmpty()) {
+                Query.Builder().bool { b -> b.filter(filterQueries) }.build()
+            } else null
+            Query.Builder().knn { knn ->
+                knn.field("contentEmbedding")
+                    .vector(vector)
+                    .minScore(KNN_MIN_SCORE)
+                preFilter?.let { knn.filter(it) }
+                knn
+            }.build()
+        } else null
+
+        // semantic + text → hybrid (multiMatch OR kNN, 각자 점수 기여)
+        // BM25 sub-query에도 pre-filter 적용
+        if (knnQuery != null) {
+            val bm25Boosted = Query.Builder().bool { b ->
+                b.must(multiMatchQuery).boost(BM25_BOOST_WITH_SEMANTIC)
+                if (filterQueries.isNotEmpty()) b.filter(filterQueries)
+                b
+            }.build()
+            val knnBoosted = Query.Builder().bool { b ->
+                b.must(knnQuery).boost(KNN_BOOST)
+            }.build()
+            return Query.Builder().hybrid { h ->
+                h.queries(bm25Boosted, knnBoosted)
+            }.build()
         }
+
+        // text only (필터는 caller에서 적용, BM25에 대해 Lucene이 pre-filter 처리)
+        return multiMatchQuery
     }
 
-    private fun buildSemanticQuery(queryEmbedding: ByteArray?, k: Int, boolQuery: BoolQuery.Builder) {
-        if (queryEmbedding == null) return
-
-        val vector = byteArrayToFloats(queryEmbedding)
-
-        boolQuery.should(Query.Builder().knn { knn ->
-            knn.field("contentEmbedding")
-                .vector(vector)
-                .k(k)
-        }.build())
+    private fun buildFilters(criteria: SearchCriteria): List<Query> = buildList {
+        buildJurisdictionCodeFilter(criteria.jurisdictionCode)?.let(::add)
+        buildAddressQueryFilter(criteria.addressQuery)?.let(::add)
+        buildRegionFilter(criteria.region)?.let(::add)
+        buildProximityFilter(criteria.proximity)?.let(::add)
+        buildIncidentTypesFilter(criteria.incidentTypes)?.let(::add)
+        buildUrgencyFilter(criteria.urgencyLevel)?.let(::add)
+        buildDateRangeFilter(criteria)?.let(::add)
     }
 
-    private fun buildJurisdictionCodeFilter(jurisdictionCode: String?, boolQuery: BoolQuery.Builder) {
-        if (jurisdictionCode == null) return
+    private fun buildJurisdictionCodeFilter(jurisdictionCode: String?): Query? {
+        if (jurisdictionCode == null) return null
 
-        boolQuery.filter(Query.Builder().prefix { p ->
+        return Query.Builder().prefix { p ->
             p.field("jurisdictionCodes").value(jurisdictionCode)
-        }.build())
+        }.build()
     }
 
-    private fun buildAddressQueryFilter(addressQuery: String?, boolQuery: BoolQuery.Builder) {
-        if (addressQuery == null) return
+    private fun buildAddressQueryFilter(addressQuery: String?): Query? {
+        if (addressQuery == null) return null
 
-        boolQuery.filter(Query.Builder().nested { nested ->
+        return Query.Builder().nested { nested ->
             nested.path("addresses").query { q ->
                 q.bool { b ->
                     b.minimumShouldMatch("1")
@@ -109,11 +167,11 @@ object SearchQueryBuilder {
                         }.build())
                 }
             }
-        }.build())
+        }.build()
     }
 
-    private fun buildRegionFilter(region: RegionFilter?, boolQuery: BoolQuery.Builder) {
-        if (region == null) return
+    private fun buildRegionFilter(region: RegionFilter?): Query? {
+        if (region == null) return null
 
         val mustClauses = buildList {
             region.depth1Name?.let { name ->
@@ -133,19 +191,19 @@ object SearchQueryBuilder {
             }
         }
 
-        if (mustClauses.isEmpty()) return
+        if (mustClauses.isEmpty()) return null
 
-        boolQuery.filter(Query.Builder().nested { nested ->
+        return Query.Builder().nested { nested ->
             nested.path("addresses").query { q ->
                 q.bool { b -> b.must(mustClauses) }
             }
-        }.build())
+        }.build()
     }
 
-    private fun buildProximityFilter(proximity: ProximityFilter?, boolQuery: BoolQuery.Builder) {
-        if (proximity == null) return
+    private fun buildProximityFilter(proximity: ProximityFilter?): Query? {
+        if (proximity == null) return null
 
-        boolQuery.filter(Query.Builder().nested { nested ->
+        return Query.Builder().nested { nested ->
             nested.path("geoPoints").query { q ->
                 q.geoDistance { geo ->
                     geo.field("geoPoints.location")
@@ -153,39 +211,39 @@ object SearchQueryBuilder {
                         .distance("${proximity.distanceKm}km")
                 }
             }
-        }.build())
+        }.build()
     }
 
-    private fun buildIncidentTypesFilter(incidentTypes: Set<String>?, boolQuery: BoolQuery.Builder) {
-        if (incidentTypes.isNullOrEmpty()) return
+    private fun buildIncidentTypesFilter(incidentTypes: Set<String>?): Query? {
+        if (incidentTypes.isNullOrEmpty()) return null
 
-        boolQuery.filter(Query.Builder().nested { nested ->
+        return Query.Builder().nested { nested ->
             nested.path("incidentTypes").query { q ->
                 q.terms { t ->
                     t.field("incidentTypes.code")
                         .terms { tv -> tv.value(incidentTypes.map { FieldValue.of(it) }) }
                 }
             }
-        }.build())
+        }.build()
     }
 
-    private fun buildUrgencyFilter(urgencyLevel: Int?, boolQuery: BoolQuery.Builder) {
-        if (urgencyLevel == null) return
+    private fun buildUrgencyFilter(urgencyLevel: Int?): Query? {
+        if (urgencyLevel == null) return null
 
-        boolQuery.filter(Query.Builder().range { r ->
+        return Query.Builder().range { r ->
             r.field("urgency.level").gte(JsonData.of(urgencyLevel))
-        }.build())
+        }.build()
     }
 
-    private fun buildDateRangeFilter(criteria: SearchCriteria, boolQuery: BoolQuery.Builder) {
-        if (criteria.dateFrom == null && criteria.dateTo == null) return
+    private fun buildDateRangeFilter(criteria: SearchCriteria): Query? {
+        if (criteria.dateFrom == null && criteria.dateTo == null) return null
 
-        boolQuery.filter(Query.Builder().range { r ->
+        return Query.Builder().range { r ->
             r.field("incidentDate").apply {
                 criteria.dateFrom?.let { gte(JsonData.of(it.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))) }
                 criteria.dateTo?.let { lte(JsonData.of(it.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))) }
             }
-        }.build())
+        }.build()
     }
 
     private fun buildSort(criteria: SearchCriteria): List<SortOptions> = when (criteria.sortBy) {

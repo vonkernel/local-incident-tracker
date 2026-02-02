@@ -13,6 +13,8 @@ class SearchQueryBuilderTest {
 
     private val indexName = "test-articles"
 
+    // --- 기본 쿼리 ---
+
     @Test
     fun `empty criteria produces match_all query`() {
         val criteria = SearchCriteria()
@@ -22,38 +24,29 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `RELEVANCE sort places query in must with multi_match`() {
+    fun `text only RELEVANCE sort produces multiMatch in must`() {
         val criteria = SearchCriteria(query = "화재", sortBy = SortType.RELEVANCE)
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
-        val boolQuery = request.query()?.bool()
-        assertNotNull(boolQuery)
-        assertTrue(boolQuery.must().isNotEmpty())
-        assertNotNull(boolQuery.must().first().multiMatch())
-
+        assertNotNull(request.query()?.multiMatch())
         val sort = request.sort()
         assertTrue(sort.isNotEmpty())
         assertNotNull(sort.first().score())
     }
 
     @Test
-    fun `DATE sort places query in filter`() {
+    fun `DATE sort with text produces multiMatch directly`() {
         val criteria = SearchCriteria(query = "폭우", sortBy = SortType.DATE)
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
-        val boolQuery = request.query()?.bool()
-        assertNotNull(boolQuery)
-        assertTrue(boolQuery.must().isEmpty())
-        assertTrue(boolQuery.filter().any { it.multiMatch() != null })
-
+        assertNotNull(request.query()?.multiMatch())
         val sort = request.sort()
         assertTrue(sort.isNotEmpty())
-        assertNotNull(sort.first().field())
         assertEquals("incidentDate", sort.first().field()?.field())
     }
 
     @Test
-    fun `DISTANCE sort places query in filter with geo_distance sort`() {
+    fun `DISTANCE sort with text produces multiMatch and geo_distance sort`() {
         val criteria = SearchCriteria(
             query = "사고",
             sortBy = SortType.DISTANCE,
@@ -61,26 +54,64 @@ class SearchQueryBuilderTest {
         )
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
+        // text + proximity filter → bool { must: [multiMatch], filter: [geoDistance] }
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.multiMatch() != null })
+        assertTrue(boolQuery.must().any { it.isMultiMatch })
+        assertTrue(boolQuery.filter().isNotEmpty())
 
         val sort = request.sort()
         assertTrue(sort.isNotEmpty())
         assertNotNull(sort.first().geoDistance())
     }
 
+    // --- Semantic search ---
+
     @Test
-    fun `semantic search adds knn to should clause`() {
+    fun `semantic search uses hybrid query with knn and multiMatch sub-queries`() {
         val criteria = SearchCriteria(query = "화재", semanticSearch = true, sortBy = SortType.RELEVANCE)
         val embedding = floatsToByteArray(FloatArray(128) { 0.1f })
 
         val request = SearchQueryBuilder.build(criteria, embedding, indexName)
 
-        val boolQuery = request.query()?.bool()
-        assertNotNull(boolQuery)
-        assertTrue(boolQuery.should().any { it.knn() != null })
+        val hybridQuery = request.query()?.hybrid()
+        assertNotNull(hybridQuery)
+        assertEquals(2, hybridQuery.queries().size)
     }
+
+    @Test
+    fun `semantic search with filters applies pre-filters to hybrid sub-queries`() {
+        val criteria = SearchCriteria(
+            query = "폭우 피해",
+            semanticSearch = true,
+            jurisdictionCode = "11",
+            incidentTypes = setOf("heavy_rain"),
+            urgencyLevel = 2,
+            dateFrom = ZonedDateTime.parse("2025-07-01T00:00:00+09:00"),
+            sortBy = SortType.RELEVANCE,
+        )
+        val embedding = floatsToByteArray(FloatArray(128) { 0.5f })
+        val request = SearchQueryBuilder.build(criteria, embedding, indexName)
+
+        // top level: hybrid (필터가 sub-query 내부에 pre-filter로 적용)
+        val hybridQuery = request.query()?.hybrid()
+        assertNotNull(hybridQuery)
+        assertEquals(2, hybridQuery.queries().size)
+
+        // BM25 sub-query: bool { must: [multiMatch], filter: [...], boost: 0.2 }
+        val bm25Sub = hybridQuery.queries().first().bool()
+        assertNotNull(bm25Sub)
+        assertTrue(bm25Sub.must().any { it.isMultiMatch })
+        assertTrue(bm25Sub.filter().size >= 3)
+
+        // kNN sub-query: bool { must: [knn(filter: {...})], boost: 10.0 }
+        val knnSub = hybridQuery.queries()[1].bool()
+        assertNotNull(knnSub)
+        val knnQuery = knnSub.must().first { it.isKnn }.knn()
+        assertNotNull(knnQuery.filter())
+    }
+
+    // --- 필터 ---
 
     @Test
     fun `jurisdiction code filter uses prefix query`() {
@@ -89,7 +120,7 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.prefix() != null })
+        assertTrue(boolQuery.filter().any { it.isPrefix })
     }
 
     @Test
@@ -99,7 +130,7 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.nested() != null })
+        assertTrue(boolQuery.filter().any { it.isNested })
     }
 
     @Test
@@ -109,7 +140,7 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.nested() != null })
+        assertTrue(boolQuery.filter().any { it.isNested })
     }
 
     @Test
@@ -137,7 +168,7 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.nested() != null })
+        assertTrue(boolQuery.filter().any { it.isNested })
     }
 
     @Test
@@ -147,7 +178,7 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.nested() != null })
+        assertTrue(boolQuery.filter().any { it.isNested })
     }
 
     @Test
@@ -157,7 +188,7 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.range() != null })
+        assertTrue(boolQuery.filter().any { it.isRange })
     }
 
     @Test
@@ -170,7 +201,7 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.range() != null })
+        assertTrue(boolQuery.filter().any { it.isRange })
     }
 
     @Test
@@ -180,29 +211,27 @@ class SearchQueryBuilderTest {
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.filter().any { it.range() != null })
+        assertTrue(boolQuery.filter().any { it.isRange })
     }
 
+    // --- 텍스트 + 필터 결합 ---
+
     @Test
-    fun `combined criteria produces correct query structure`() {
+    fun `text query with filters wraps in bool must + filter`() {
         val criteria = SearchCriteria(
-            query = "폭우 피해",
-            semanticSearch = true,
-            jurisdictionCode = "11",
-            incidentTypes = setOf("heavy_rain"),
-            urgencyLevel = 2,
-            dateFrom = ZonedDateTime.parse("2025-07-01T00:00:00+09:00"),
+            query = "화재",
+            jurisdictionCode = "11680",
             sortBy = SortType.RELEVANCE,
         )
-        val embedding = floatsToByteArray(FloatArray(128) { 0.5f })
-        val request = SearchQueryBuilder.build(criteria, embedding, indexName)
+        val request = SearchQueryBuilder.build(criteria, null, indexName)
 
         val boolQuery = request.query()?.bool()
         assertNotNull(boolQuery)
-        assertTrue(boolQuery.must().isNotEmpty())
-        assertTrue(boolQuery.should().isNotEmpty())
-        assertTrue(boolQuery.filter().size >= 3)
+        assertTrue(boolQuery.must().any { it.isMultiMatch })
+        assertTrue(boolQuery.filter().any { it.isPrefix })
     }
+
+    // --- 페이지네이션 & 하이라이트 ---
 
     @Test
     fun `pagination is correctly applied`() {
