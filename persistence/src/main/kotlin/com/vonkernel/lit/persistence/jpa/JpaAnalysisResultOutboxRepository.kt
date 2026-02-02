@@ -3,4 +3,6 @@ package com.vonkernel.lit.persistence.jpa
 import com.vonkernel.lit.persistence.jpa.entity.outbox.AnalysisResultOutboxEntity
 import org.springframework.data.jpa.repository.JpaRepository
 
-interface JpaAnalysisResultOutboxRepository : JpaRepository<AnalysisResultOutboxEntity, Long>
+interface JpaAnalysisResultOutboxRepository : JpaRepository<AnalysisResultOutboxEntity, Long> {
+    fun deleteByArticleId(articleId: String)
+}

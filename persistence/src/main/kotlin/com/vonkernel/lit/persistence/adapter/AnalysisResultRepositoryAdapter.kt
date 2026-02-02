@@ -42,6 +42,7 @@ class AnalysisResultRepositoryAdapter(
 
     @Transactional
     override fun deleteByArticleId(articleId: String) {
+        jpaAnalysisResultOutboxRepository.deleteByArticleId(articleId)
         jpaAnalysisResultRepository.findByArticleId(articleId)?.let {
             jpaAnalysisResultRepository.delete(it)
         }
