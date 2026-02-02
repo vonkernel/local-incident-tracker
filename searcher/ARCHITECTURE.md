@@ -176,7 +176,7 @@ graph TB
 | 컴포넌트 | 구현 Port | 역할 |
 |---------|-----------|------|
 | `OpenSearchArticleSearcher` | `ArticleSearcher` | OpenSearch Java Client를 사용하여 검색 실행. 내부적으로 `SearchQueryBuilder`와 `SearchResultMapper`를 사용하여 도메인 모델 ↔ OpenSearch DSL 변환을 캡슐화. 커넥션 풀 관리, 타임아웃 설정 |
-| `SearchQueryBuilder` | (내부 헬퍼) | `SearchCriteria` + 선택적 쿼리 임베딩 → OpenSearch Query DSL 변환. Bool query 내 must/filter/should 절을 조건별로 구성하고, SortType에 따라 정렬 전략 결정. OpenSearch DSL에 종속된 기술 구현이므로 adapter 계층에 위치 |
+| `SearchQueryBuilder` | (내부 헬퍼) | `SearchCriteria` + 선택적 쿼리 임베딩 → OpenSearch Query DSL 변환. 텍스트 검색 시 bool(must + filter), 시맨틱 검색 시 hybrid(BM25 + kNN) 쿼리를 구성하고 SortType에 따라 정렬 전략 결정. OpenSearch DSL에 종속된 기술 구현이므로 adapter 계층에 위치 |
 | `SearchResultMapper` | (내부 헬퍼) | OpenSearch `SearchResponse` → `SearchResult` 변환. Hit 문서를 도메인 모델로 역직렬화하고 점수, 페이지네이션 메타데이터를 포함. OpenSearch 응답 구조에 종속된 기술 구현이므로 adapter 계층에 위치 |
 | `EmbeddingAdapter` | `Embedder` | ai-core의 `EmbeddingExecutor`에 위임하여 OpenAI `text-embedding-3-small` (128차원) 호출 후, `FloatArray`를 `ByteArray`로 변환. indexer의 `EmbeddingAdapter`와 동일한 변환 로직 |
 
@@ -251,10 +251,16 @@ data class RegionFilter(
 |------|------|
 | 벡터 필드 | `contentEmbedding` |
 | 차원 | 128 |
-| 유사도 메트릭 | cosine similarity |
-| k | 검색 결과 수 (size 파라미터) |
+| 유사도 메트릭 | cosine similarity (`cosinesimil`) |
+| 최소 점수 | `min_score = 0.8` (cosine similarity ≥ 0.6) |
 
-**하이브리드 검색**: 시맨틱 검색과 전문 검색을 결합하여 사용할 수 있습니다. 전문 검색 점수와 벡터 유사도 점수를 가중 합산하여 최종 순위를 결정합니다.
+**하이브리드 검색**: 시맨틱 검색은 전문 검색의 보완 수단으로, 텍스트 쿼리가 있을 때만 활성화됩니다. OpenSearch `hybrid` 쿼리를 사용하여 BM25(multiMatch)와 kNN을 결합하며, `normalization-processor` search pipeline을 통해 점수를 정규화한 뒤 가중 합산합니다.
+
+- **텍스트 매칭**: multiMatch(Operator.And, BestFields) — 모든 쿼리 텀이 매치되어야 함
+- **벡터 매칭**: kNN(min_score) — 최소 유사도 점수를 충족해야 함
+- **결합 방식**: multiMatch OR kNN — 둘 중 하나만 매치되어도 결과에 포함
+- **점수 정규화**: min_max 정규화 후 arithmetic_mean 합산 (BM25 30% : kNN 70%)
+- **Pre-filter**: 필터 조건을 hybrid sub-query 내부에 적용하여, 필터 범위 내에서만 BM25/kNN 검색 수행
 
 ### 3. 위치 기반 필터 - 법정구역 코드
 
@@ -343,7 +349,7 @@ Nori 분석기가 한국어 형태소 분석을 수행하므로 부분 주소 �
 
 #### DATE 정렬
 
-`incidentDate` 필드 기준 최신순으로 정렬합니다. 텍스트 쿼리가 있으면 필터로만 사용하고, 점수 기반 정렬은 하지 않습니다.
+`incidentDate` 필드 기준 최신순으로 정렬합니다. 텍스트 쿼리가 있으면 매칭 필터로 사용하되, 점수 기반 정렬은 하지 않습니다.
 
 ```
 정렬 = incidentDate DESC
@@ -361,37 +367,74 @@ Nori 분석기가 한국어 형태소 분석을 수행하므로 부분 주소 �
 
 ## OpenSearch 쿼리 전략
 
-### 기본 쿼리 구조
+### 쿼리 구조
+
+검색 조건에 따라 쿼리 구조가 달라집니다:
+
+#### 텍스트 검색 (non-semantic)
+
+텍스트 쿼리와 필터를 `bool` 쿼리로 결합합니다. `bool.filter`는 Lucene에 의해 pre-filter로 처리됩니다.
 
 ```json
 {
   "query": {
     "bool": {
-      "must": [],
-      "filter": [],
-      "should": []
+      "must": [{ "multi_match": { "query": "...", "operator": "and", "type": "best_fields" } }],
+      "filter": [/* 필터 조건들 */]
     }
-  },
-  "from": 0,
-  "size": 20,
-  "sort": [],
-  "highlight": {}
+  }
 }
 ```
 
-### 조건별 쿼리 구성
+#### 시맨틱 검색 (hybrid)
 
-| 검색 조건 | Bool 절 | OpenSearch 쿼리 타입 |
-|-----------|---------|---------------------|
-| 텍스트 검색 (`query`) | `must` | `multi_match` (title^3, keywords^2, content) |
-| 시맨틱 검색 (`semanticSearch`) | `should` | `knn` (contentEmbedding) |
-| 법정구역 코드 (`jurisdictionCode`) | `filter` | `prefix` (jurisdictionCodes) |
-| 주소 텍스트 (`addressQuery`) | `filter` (nested) | `match` (addresses.addressName) 또는 `bool.should` → `term` (addresses.depth1\|2\|3Name) |
-| 행정구역명 조합 (`region`) | `filter` (nested) | `bool.must` → `term` (addresses.depth1~3Name, 지정된 필드만) |
-| 거리 필터 (`proximity`) | `filter` (nested) | `geo_distance` (geoPoints.location) |
-| 카테고리 (`incidentTypes`) | `filter` (nested) | `terms` (incidentTypes.code) |
-| 긴급도 (`urgencyLevel`) | `filter` | `range` (urgency.level, gte) |
-| 날짜 범위 (`dateFrom`, `dateTo`) | `filter` | `range` (incidentDate) |
+`hybrid` 쿼리를 사용하여 BM25와 kNN을 결합합니다. 필터는 각 sub-query 내부에 pre-filter로 적용됩니다.
+`normalization-processor` search pipeline(`hybrid-search-pipeline`)이 점수 정규화 및 합산을 담당합니다.
+
+```json
+{
+  "query": {
+    "hybrid": {
+      "queries": [
+        {
+          "bool": {
+            "must": [{ "multi_match": { "query": "...", "operator": "and", "type": "best_fields" } }],
+            "filter": [/* 필터 조건들 (pre-filter) */],
+            "boost": 0.2
+          }
+        },
+        {
+          "bool": {
+            "must": [{ "knn": { "contentEmbedding": { "vector": [...], "min_score": 0.8, "filter": { "bool": { "filter": [/* 필터 조건들 (pre-filter) */] } } } } }],
+            "boost": 10.0
+          }
+        }
+      ]
+    }
+  },
+  "search_pipeline": "hybrid-search-pipeline"
+}
+```
+
+### 필터 조건
+
+| 검색 조건 | OpenSearch 쿼리 타입 |
+|-----------|---------------------|
+| 법정구역 코드 (`jurisdictionCode`) | `prefix` (jurisdictionCodes) |
+| 주소 텍스트 (`addressQuery`) | `nested` → `match` (addresses.addressName) 또는 `bool.should` → `term` (addresses.depth1\|2\|3Name) |
+| 행정구역명 조합 (`region`) | `nested` → `bool.must` → `term` (addresses.depth1~3Name, 지정된 필드만) |
+| 거리 필터 (`proximity`) | `nested` → `geo_distance` (geoPoints.location) |
+| 카테고리 (`incidentTypes`) | `nested` → `terms` (incidentTypes.code) |
+| 긴급도 (`urgencyLevel`) | `range` (urgency.level, gte) |
+| 날짜 범위 (`dateFrom`, `dateTo`) | `range` (incidentDate) |
+
+### 필터 적용 방식
+
+| 검색 모드 | 필터 적용 위치 | 방식 |
+|-----------|---------------|------|
+| 텍스트 검색 (non-semantic) | `bool.filter` (외부) | Lucene이 pre-filter로 처리 |
+| 시맨틱 검색 (hybrid) | 각 sub-query 내부 | BM25: `bool.filter`, kNN: `knn.filter` (pre-filter) |
+| 필터만 (텍스트 없음) | `bool.filter` | 필터 조건만 적용 |
 
 ### addressQuery 쿼리 전략
 
@@ -459,7 +502,7 @@ addressQuery 입력
 ```
 
 - `query`가 `must`의 `multi_match`로 들어가 BM25 점수 산출
-- `semanticSearch = true`이면 `should`에 `knn` 쿼리 추가하여 점수 합산
+- `semanticSearch = true`이면 `hybrid` 쿼리로 전환하여 BM25와 kNN 점수를 정규화 후 합산
 
 #### DATE
 
@@ -469,7 +512,7 @@ addressQuery 입력
 }
 ```
 
-- `query`가 있으면 `filter`로 처리 (점수 산출 안 함)
+- 텍스트 쿼리가 있으면 `must`의 `multi_match`로 필터링 (점수 기반 정렬은 하지 않음)
 - 텍스트 쿼리 없이 필터 조건만으로도 사용 가능
 
 #### DISTANCE
@@ -494,13 +537,13 @@ addressQuery 입력
 
 ### SortType에 따른 query 절 변화
 
-`query` 파라미터(텍스트 검색)가 있을 때, `SortType`에 따라 Bool query 내 배치가 달라집니다:
+`query` 파라미터(텍스트 검색)가 있을 때, 모든 SortType에서 동일하게 `multi_match`를 사용합니다. SortType은 정렬 기준만 변경하며 쿼리 구성에 영향을 주지 않습니다.
 
-| SortType | `query` 텍스트 배치 | 이유 |
+| SortType | `query` 텍스트 배치 | 정렬 |
 |----------|-------------------|------|
-| `RELEVANCE` | `must` (multi_match) | BM25 점수가 정렬 기준이므로 점수 산출 필요 |
-| `DATE` | `filter` (multi_match) | 날짜순 정렬이므로 텍스트는 필터링만, 점수 산출 불필요 |
-| `DISTANCE` | `filter` (multi_match) | 거리순 정렬이므로 텍스트는 필터링만, 점수 산출 불필요 |
+| `RELEVANCE` | `must` (multi_match) | `_score` DESC |
+| `DATE` | `must` (multi_match) | `incidentDate` DESC |
+| `DISTANCE` | `must` (multi_match) | `_geo_distance` ASC |
 
 ---
 
@@ -625,11 +668,11 @@ searcher/src/test/kotlin/com/vonkernel/lit/searcher/
 외부 의존성을 MockK로 모킹하여 비즈니스 로직만 검증합니다.
 
 - `SearchQueryBuilderTest`: 검색 조건 → OpenSearch 쿼리 변환 검증
-  - RELEVANCE 정렬: query를 must multi_match로 배치, _score desc 정렬
-  - DATE 정렬: query를 filter multi_match로 배치, incidentDate desc 정렬
-  - DISTANCE 정렬: query를 filter multi_match로 배치, _geo_distance asc 정렬
-  - DISTANCE 정렬 시 proximity 미지정이면 유효성 검증 실패
-  - 시맨틱 검색 시 kNN 쿼리 should 절 구성
+  - RELEVANCE 정렬: multi_match + _score desc 정렬
+  - DATE 정렬: multi_match + incidentDate desc 정렬
+  - DISTANCE 정렬: multi_match + proximity 필터 + _geo_distance asc 정렬
+  - 시맨틱 검색: hybrid 쿼리 (BM25 + kNN sub-queries) 구성, pipeline 적용
+  - 시맨틱 검색 + 필터: hybrid sub-query 내부에 pre-filter 적용 (BM25: bool.filter, kNN: knn.filter)
   - 법정구역 코드 필터 시 prefix 쿼리 구성
   - 주소 텍스트 검색 시 nested bool.should (match addressName + term depth1~3Name)
   - 행정구역명 조합 필터 시 nested bool.must term 쿼리 구성 (depth1~3Name)
@@ -746,7 +789,7 @@ searcher/src/test/kotlin/com/vonkernel/lit/searcher/
 **이유**:
 - 사용자의 검색 의도에 따라 최적의 정렬이 다름 (키워드 검색 시 관련성, 모니터링 시 최신순, 현장 파악 시 거리순)
 - 복합 점수 방식은 각 요인의 가중치 튜닝이 어렵고 결과 예측이 불투명
-- 독립 정렬은 SortType에 따라 query 절 배치(must vs filter)가 명확하게 결정되어 구현이 단순
+- 독립 정렬은 쿼리 구성과 정렬 기준을 분리하여 구현이 단순
 - 필터 조건(위치, 카테고리, 긴급도, 날짜)은 정렬 모드와 무관하게 동일하게 적용
 
 ---
