@@ -8,6 +8,8 @@ import org.opensearch.client.opensearch.core.IndexRequest
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.time.format.DateTimeFormatter
 
 @Component
@@ -19,45 +21,35 @@ class OpenSearchArticleIndexer(
     private val log = LoggerFactory.getLogger(javaClass)
 
     override suspend fun index(document: ArticleIndexDocument) {
-        val documentMap = toMap(document)
-
-        val request = IndexRequest.Builder<Map<String, Any?>>()
+        IndexRequest.Builder<Map<String, Any?>>()
             .index(indexName)
             .id(document.articleId)
-            .document(documentMap)
+            .document(toMap(document))
             .build()
-
-        val response = openSearchClient.index(request)
-        log.info("Indexed article {} with result: {}", document.articleId, response.result())
+            .let { openSearchClient.index(it) }
+            .also { log.info("Indexed article {} with result: {}", document.articleId, it.result()) }
     }
 
     override suspend fun indexAll(documents: List<ArticleIndexDocument>) {
-        if (documents.isEmpty()) return
-
-        val bulkRequest = BulkRequest.Builder()
-        documents.forEach { doc ->
-            bulkRequest.operations { op ->
-                op.index<Map<String, Any?>> { idx ->
-                    idx.index(indexName).id(doc.articleId).document(toMap(doc))
-                }
+        documents.takeIf { it.isNotEmpty() }
+            ?.let { buildBulkRequest(it) }
+            ?.let { openSearchClient.bulk(it) }
+            ?.also { response ->
+                response.items()
+                    .filter { it.error() != null }
+                    .forEach { log.error("Failed to bulk index document {}: {}", it.id(), it.error()?.reason()) }
+                log.info("Bulk indexed {} documents, errors: {}", documents.size, response.errors())
             }
-        }
-
-        val response = openSearchClient.bulk(bulkRequest.build())
-        if (response.errors()) {
-            response.items().filter { it.error() != null }.forEach { item ->
-                log.error(
-                    "Failed to bulk index document {}: {}",
-                    item.id(), item.error()?.reason()
-                )
-            }
-        }
-        log.info("Bulk indexed {} documents, errors: {}", documents.size, response.errors())
     }
 
+    private fun buildBulkRequest(documents: List<ArticleIndexDocument>): BulkRequest =
+        documents.fold(BulkRequest.Builder()) { builder, doc ->
+            builder.operations { op -> op.index { it.index(indexName).id(doc.articleId).document(toMap(doc)) } }
+        }.build()
+
     override suspend fun delete(articleId: String) {
-        val response = openSearchClient.delete { it.index(indexName).id(articleId) }
-        log.info("Deleted article {} with result: {}", articleId, response.result())
+        openSearchClient.delete { it.index(indexName).id(articleId) }
+            .also { log.info("Deleted article {} with result: {}", articleId, it.result()) }
     }
 
     private fun toMap(document: ArticleIndexDocument): Map<String, Any?> = buildMap {
@@ -94,7 +86,7 @@ class OpenSearchArticleIndexer(
     }
 
     private fun ByteArray.toFloatArray(): List<Float> {
-        val buffer = java.nio.ByteBuffer.wrap(this).order(java.nio.ByteOrder.BIG_ENDIAN)
-        return List(this.size / 4) { buffer.getFloat() }
+        return ByteBuffer.wrap(this).order(ByteOrder.BIG_ENDIAN)
+            .let { List(this.size / 4) { it.toFloat() } }
     }
 }
