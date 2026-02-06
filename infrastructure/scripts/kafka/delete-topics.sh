@@ -8,5 +8,6 @@ echo ""
 "$SCRIPT_DIR/delete-article-topic.sh"
 "$SCRIPT_DIR/delete-analysis-topic.sh"
 "$SCRIPT_DIR/delete-dlq-topic.sh"
+"$SCRIPT_DIR/delete-indexer-dlq-topic.sh"
 
 echo "=== All Done ==="

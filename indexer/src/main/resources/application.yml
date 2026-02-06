@@ -21,8 +21,13 @@ server:
 kafka:
   topic:
     analysis-events: ${KAFKA_ANALYSIS_EVENTS_TOPIC:lit.public.analysis_result_outbox}
+    analysis-events-dlq: ${KAFKA_ANALYSIS_EVENTS_DLQ_TOPIC:lit.indexer.analysis-events.dlq}
   consumer:
     group-id: ${KAFKA_CONSUMER_GROUP_ID:indexer-group}
+  dlq:
+    max-retries: ${DLQ_MAX_RETRIES:3}
+    consumer:
+      group-id: ${DLQ_CONSUMER_GROUP_ID:indexer-dlq-group}
 
 opensearch:
   host: ${OPENSEARCH_HOST:localhost}
