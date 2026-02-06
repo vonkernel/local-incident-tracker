@@ -51,6 +51,10 @@ flowchart TD
     G --> H[PostgreSQL<br/>analysis_result 테이블]
     H -->|Debezium CDC| I[Kafka<br/>analysis-events 토픽]
     I --> J["[indexer]"]
+    C -->|분석 실패| K[DLQ 토픽<br/>lit.analyzer.article-events.dlq]
+    K --> L[DlqEventListener<br/>단건 재처리]
+    L -->|재시도| D
+    L -->|max retries 초과| M[폐기]
 ```
 
 ---
@@ -170,8 +174,10 @@ graph TB
 
 | 컴포넌트 | 패키지 | 역할 | 입출력 |
 |---------|--------|------|--------|
-| `ArticleEventListener` | `adapter/inbound/consumer` | Kafka 배치 Consumer. Debezium CDC 이벤트를 수신하여 분석 시작 | `ConsumerRecord` → `ArticleAnalysisService.analyze()` 호출 |
+| `ArticleEventListener` | `adapter/inbound/consumer` | Kafka 배치 Consumer. Debezium CDC 이벤트를 수신하여 분석 시작. 배치 분석 실패 시 개별 레코드를 DLQ로 발행 | `ConsumerRecord` → `ArticleAnalysisService.analyze()` 호출 |
+| `DlqEventListener` | `adapter/inbound/consumer` | DLQ 단건 Consumer. `max-poll-records=1`, `ackMode=RECORD` 설정으로 단건씩 처리. retry header에서 재시도 횟수 추출하여 max retries 초과 시 폐기, 미만 시 재분석 시도 | DLQ 메시지 → `ArticleAnalysisService.analyze()` 호출 |
 | `DebeziumArticleEvent` | `adapter/inbound/consumer/model` | CDC 이벤트 역직렬화 모델. `op=c`(create), `op=r`(read) 이벤트만 처리 | JSON → `Article` 변환 |
+| `KafkaDlqPublisher` | `adapter/outbound/dlq` | `DlqPublisher` 구현체. 분석 실패 레코드를 DLQ 토픽으로 발행. `acks=all`, idempotent producer 설정. `dlq-retry-count` 헤더로 재시도 횟수 전달 | 원본 메시지 → DLQ 토픽 발행 |
 | `DefaultRefineArticleAnalyzer` | `adapter/outbound/analyzer` | `RefineArticleAnalyzer` 구현체. LLM으로 기사 정제 및 요약 생성 | `RefineArticleInput` → `RefineArticleOutput` |
 | `DefaultIncidentTypeAnalyzer` | `adapter/outbound/analyzer` | `IncidentTypeAnalyzer` 구현체. LLM으로 사건 유형 다중 분류 | `IncidentTypeClassificationInput` → `IncidentTypeClassificationOutput` |
 | `DefaultUrgencyAnalyzer` | `adapter/outbound/analyzer` | `UrgencyAnalyzer` 구현체. LLM으로 긴급도 평가 | `UrgencyAssessmentInput` → `UrgencyAssessmentOutput` |
@@ -198,6 +204,7 @@ graph TB
 
 | 인터페이스 | 패키지 | 역할 |
 |-----------|--------|------|
+| `DlqPublisher` | `domain/port` | DLQ 발행 계약. 분석 실패 시 원본 메시지를 DLQ 토픽으로 발행 |
 | `RefineArticleAnalyzer` | `domain/port/analyzer` | 기사 정제 계약 (제목·본문 정제, 요약 생성) |
 | `IncidentTypeAnalyzer` | `domain/port/analyzer` | 사건 유형 분류 계약 (35+ 유형 다중 분류) |
 | `UrgencyAnalyzer` | `domain/port/analyzer` | 긴급도 평가 계약 (단일 레이블) |
@@ -218,8 +225,10 @@ analyzer/src/main/kotlin/com/vonkernel/lit/analyzer/
 │   ├── inbound/
 │   │   └── consumer/
 │   │       ├── ArticleEventListener.kt
+│   │       ├── DlqEventListener.kt                     # DLQ 단건 Consumer
 │   │       ├── config/
-│   │       │   └── DebeziumObjectMapperConfig.kt
+│   │       │   ├── DebeziumObjectMapperConfig.kt
+│   │       │   └── DlqKafkaConsumerConfig.kt           # DLQ Consumer 설정
 │   │       └── model/
 │   │           └── DebeziumArticleEvent.kt
 │   └── outbound/
@@ -231,6 +240,10 @@ analyzer/src/main/kotlin/com/vonkernel/lit/analyzer/
 │       │   ├── DefaultTopicAnalyzer.kt
 │       │   ├── DefaultLocationAnalyzer.kt
 │       │   └── DefaultLocationValidator.kt
+│       ├── dlq/
+│       │   ├── KafkaDlqPublisher.kt                    # DlqPublisher 구현체
+│       │   └── config/
+│       │       └── DlqKafkaProducerConfig.kt           # DLQ Producer 설정
 │       └── geocoding/
 │           ├── KakaoGeocodingAdapter.kt
 │           ├── config/
@@ -243,6 +256,7 @@ analyzer/src/main/kotlin/com/vonkernel/lit/analyzer/
     ├── exception/
     │   └── ArticleAnalysisException.kt
     ├── port/
+    │   ├── DlqPublisher.kt                             # DLQ 발행 계약
     │   ├── analyzer/
     │   │   ├── RefineArticleAnalyzer.kt
     │   │   ├── IncidentTypeAnalyzer.kt
@@ -316,6 +330,11 @@ KAFKA_CONSUMER_GROUP_ID=analyzer-group
 
 # Kakao REST API Key (지오코딩용)
 KAKAO_REST_API_KEY=your-kakao-rest-api-key-here
+
+# DLQ (Dead Letter Queue) 설정
+KAFKA_ARTICLE_EVENTS_DLQ_TOPIC=lit.analyzer.article-events.dlq
+DLQ_MAX_RETRIES=3
+DLQ_CONSUMER_GROUP_ID=analyzer-dlq-group
 ```
 
 ### 3. 설정 확인
@@ -330,6 +349,9 @@ KAKAO_REST_API_KEY=your-kakao-rest-api-key-here
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | 아니오 | Kafka 브로커 주소 |
 | `KAFKA_ARTICLE_EVENTS_TOPIC` | `lit.public.article` | 아니오 | 기사 이벤트 토픽 |
 | `KAFKA_CONSUMER_GROUP_ID` | `analyzer-group` | 아니오 | Kafka Consumer 그룹 ID |
+| `KAFKA_ARTICLE_EVENTS_DLQ_TOPIC` | `lit.analyzer.article-events.dlq` | 아니오 | DLQ 토픽명 |
+| `DLQ_MAX_RETRIES` | `3` | 아니오 | 최대 재시도 횟수 |
+| `DLQ_CONSUMER_GROUP_ID` | `analyzer-dlq-group` | 아니오 | DLQ Consumer 그룹 ID |
 
 ---
 
@@ -514,6 +536,33 @@ open analyzer/build/reports/tests/test/index.html
 - **위치 지오코딩 실패 허용**: 개별 위치 지오코딩 실패 시 `UNKNOWN` Location으로 대체 (전체 분석 실패 방지)
 - **멱등성**: 동일 기사 재처리 시 기존 분석 결과를 삭제 후 재분석
 - **`ArticleAnalysisException`**: 분석 실패 시 `articleId`를 포함한 구조화된 예외 로깅
+
+### 5. DLQ (Dead Letter Queue) 전략
+
+**방식**: 분석 실패 시 별도 Kafka 토픽으로 발행하여 재처리
+
+**메커니즘**:
+```
+배치 분석 실패
+    ↓
+ArticleEventListener: 개별 레코드를 DLQ로 발행 (retryCount=0)
+    ↓
+DlqEventListener: 단건 소비 (max-poll-records=1, ackMode=RECORD)
+    ↓
+retryCount < maxRetries?
+    ├─ Yes → Outdated 체크 (DB에 이미 분석 결과 존재?)
+    │         ├─ Outdated → skip (offset commit)
+    │         └─ Not Outdated → 재분석 시도
+    │                            ├─ 성공 → 완료 (offset commit)
+    │                            └─ 실패 → DLQ 재발행 (retryCount+1)
+    └─ No → 폐기 (offset commit, 로깅)
+```
+
+**설계 포인트**:
+- **Outdated 체크**: DLQ 처리 전 DB에서 해당 articleId의 분석 결과 존재 여부 확인. 이미 존재하면 재분석 불필요 (at-least-once 중복 처리 방지)
+- **파싱 실패는 DLQ 제외**: 역직렬화 실패 레코드는 poison pill로 간주하여 drop
+- **dlq-retry-count 헤더**: 재시도 횟수를 Kafka 메시지 헤더로 전달
+- **idempotent producer**: `acks=all`, `enable.idempotence=true`로 정확히 한 번 전달 보장
 
 ---
 

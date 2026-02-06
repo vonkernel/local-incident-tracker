@@ -33,6 +33,7 @@ indexer는 analyzer가 생성한 분석 결과를 OpenSearch에 검색 최적화
 - 정제된 본문(refined content)에 대해 OpenAI `text-embedding-3-small` 모델로 벡터 임베딩 생성
 - OpenSearch에 `ArticleIndexDocument` 색인
 - 멱등성 보장 (동일 articleId 재처리 시 기존 문서 갱신)
+- 인덱싱 실패 시 DLQ(Dead Letter Queue)로 발행하여 재처리 지원
 
 ---
 
@@ -48,6 +49,10 @@ flowchart TD
     E --> G[ArticleIndexDocument 목록 생성]
     F --> G
     G --> H[ArticleIndexer<br/>OpenSearch bulk 색인]
+    C -->|인덱싱 실패| I[DLQ 토픽<br/>lit.indexer.analysis-events.dlq]
+    I --> J[DlqEventListener<br/>단건 재처리]
+    J -->|재시도| D
+    J -->|max retries 초과| K[폐기]
 ```
 
 ---
@@ -106,14 +111,17 @@ graph TB
         IN["Inbound Adapter"]
         OUT["Outbound Adapter"]
         IN --> IN1["AnalysisResultEventListener<br/>(Kafka Consumer)"]
-        IN --> IN2["DebeziumOutboxEvent<br/>(CDC 이벤트 모델)"]
+        IN --> IN2["DlqEventListener<br/>(DLQ Consumer)"]
+        IN --> IN3["DebeziumOutboxEvent<br/>(CDC 이벤트 모델)"]
         OUT --> OUT1["OpenSearchArticleIndexer<br/>(OpenSearch Client)"]
         OUT --> OUT2["EmbeddingAdapter<br/>(Spring AI Embedding)"]
+        OUT --> OUT3["KafkaDlqPublisher<br/>(DLQ Producer)"]
     end
 
     subgraph Port ["Port Interfaces (Contracts)"]
         P1["ArticleIndexer"]
         P2["Embedder"]
+        P3["DlqPublisher"]
     end
 
     subgraph Service ["Domain Service (FP - Orchestration)"]
@@ -153,6 +161,7 @@ graph TB
 |-----------|------|----------|
 | `ArticleIndexer` | OpenSearch 색인 계약. `articleId`를 문서 ID로 사용하여 upsert 수행 → 멱등성 보장 | `index(document)`, `delete(articleId)`, `indexAll(documents)` |
 | `Embedder` | 텍스트 임베딩 생성 계약. indexer 내부에서는 `ByteArray`로 추상화하여 ai-core의 `EmbeddingExecutor`(`FloatArray`) 와 추상화 경계를 분리 | `embed(text): ByteArray`, `embedAll(texts): List<ByteArray?>` |
+| `DlqPublisher` | DLQ 발행 계약. 인덱싱 실패 시 원본 메시지를 DLQ 토픽으로 발행 | `publish(originalMessage, retryCount, articleId)` |
 
 ### Domain Service
 
@@ -172,7 +181,8 @@ graph TB
 
 | 컴포넌트 | 역할 |
 |---------|------|
-| `AnalysisResultEventListener` | Kafka 배치 Consumer. 배치 내 레코드를 역직렬화/필터링하여 `List<AnalysisResult>`를 수집한 뒤 `articleIndexingService.indexAll()`로 일괄 처리. 역직렬화 실패 레코드는 로깅 후 skip |
+| `AnalysisResultEventListener` | Kafka 배치 Consumer. 배치 내 레코드를 역직렬화/필터링하여 `List<AnalysisResult>`를 수집한 뒤 `articleIndexingService.indexAll()`로 일괄 처리. 역직렬화 실패 레코드는 로깅 후 skip. 배치 인덱싱 실패 시 개별 레코드를 DLQ로 발행 |
+| `DlqEventListener` | DLQ 단건 Consumer. `max-poll-records=1`, `ackMode=RECORD` 설정으로 단건씩 처리. retry header에서 재시도 횟수 추출하여 max retries 초과 시 폐기, 미만 시 재인덱싱 시도. 실패 시 retryCount+1로 DLQ 재발행 |
 | `DebeziumOutboxEvent` | CDC 이벤트 역직렬화 모델. Debezium이 JSONB 컬럼을 문자열로 전달하므로 **이중 역직렬화** 수행 (1차: Debezium Envelope → 2차: `payload` JSON 문자열 → `AnalysisResult`). `op=c`(create), `op=r`(read/snapshot) 이벤트만 처리 |
 
 **Outbound**:
@@ -181,6 +191,7 @@ graph TB
 |---------|-----------|------|
 | `OpenSearchArticleIndexer` | `ArticleIndexer` | OpenSearch Java Client를 사용하여 문서 색인. 단건 `index`와 bulk API 기반 `indexAll` 제공. `articleId`를 문서 ID로 사용하여 동일 ID 재색인 시 기존 문서 갱신 (upsert) |
 | `EmbeddingAdapter` | `Embedder` | ai-core의 `EmbeddingExecutor`에 위임하여 OpenAI `text-embedding-3-small` (128차원) 호출 후, 반환된 `FloatArray`를 `ByteArray`로 변환. 단건 `embed`와 배치 `embedAll` 제공. 배치 호출 실패 시 전체 null 리스트 반환 (graceful degradation) |
+| `KafkaDlqPublisher` | `DlqPublisher` | 인덱싱 실패 레코드를 DLQ 토픽(`lit.indexer.analysis-events.dlq`)으로 발행. `acks=all`, idempotent producer 설정. `dlq-retry-count` 헤더로 재시도 횟수 전달 |
 
 ---
 
@@ -491,11 +502,17 @@ indexer/src/main/kotlin/com/vonkernel/lit/indexer/
 │   ├── inbound/
 │   │   └── consumer/
 │   │       ├── AnalysisResultEventListener.kt          # Kafka 배치 Consumer
+│   │       ├── DlqEventListener.kt                     # DLQ 단건 Consumer
 │   │       ├── config/
-│   │       │   └── DebeziumObjectMapperConfig.kt       # CDC JSON 역직렬화 설정
+│   │       │   ├── DebeziumObjectMapperConfig.kt       # CDC JSON 역직렬화 설정
+│   │       │   └── DlqKafkaConsumerConfig.kt           # DLQ Consumer 설정
 │   │       └── model/
 │   │           └── DebeziumOutboxEvent.kt              # CDC 이벤트 역직렬화 모델
 │   └── outbound/
+│       ├── dlq/
+│       │   ├── KafkaDlqPublisher.kt                    # DlqPublisher 구현체
+│       │   └── config/
+│       │       └── DlqKafkaProducerConfig.kt           # DLQ Producer 설정
 │       ├── embedding/
 │       │   └── EmbeddingAdapter.kt                     # Embedder 구현체
 │       └── opensearch/
@@ -507,6 +524,7 @@ indexer/src/main/kotlin/com/vonkernel/lit/indexer/
 │   │   └── IndexDocumentAssembler.kt                   # 문서 변환 순수 함수
 │   ├── port/
 │   │   ├── ArticleIndexer.kt                           # OpenSearch 색인 계약
+│   │   ├── DlqPublisher.kt                             # DLQ 발행 계약
 │   │   └── Embedder.kt                                 # 임베딩 생성 계약
 │   ├── service/
 │   │   └── ArticleIndexingService.kt                   # 인덱싱 오케스트레이션
@@ -521,6 +539,7 @@ indexer/src/test/kotlin/com/vonkernel/lit/indexer/
 │   ├── inbound/
 │   │   └── consumer/
 │   │       ├── AnalysisResultEventListenerTest.kt
+│   │       ├── DlqEventListenerTest.kt
 │   │       └── model/
 │   │           └── DebeziumOutboxEventTest.kt
 │   └── outbound/
@@ -558,6 +577,11 @@ KAFKA_CONSUMER_GROUP_ID=indexer-group
 OPENSEARCH_HOST=localhost
 OPENSEARCH_PORT=9200
 OPENSEARCH_INDEX_NAME=articles
+
+# DLQ (Dead Letter Queue) 설정
+KAFKA_ANALYSIS_EVENTS_DLQ_TOPIC=lit.indexer.analysis-events.dlq
+DLQ_MAX_RETRIES=3
+DLQ_CONSUMER_GROUP_ID=indexer-dlq-group
 ```
 
 ### 3. 설정 확인
@@ -571,6 +595,9 @@ OPENSEARCH_INDEX_NAME=articles
 | `OPENSEARCH_HOST` | `localhost` | 아니오 | OpenSearch 호스트 |
 | `OPENSEARCH_PORT` | `9200` | 아니오 | OpenSearch 포트 |
 | `OPENSEARCH_INDEX_NAME` | `articles` | 아니오 | OpenSearch 인덱스명 |
+| `KAFKA_ANALYSIS_EVENTS_DLQ_TOPIC` | `lit.indexer.analysis-events.dlq` | 아니오 | DLQ 토픽명 |
+| `DLQ_MAX_RETRIES` | `3` | 아니오 | 최대 재시도 횟수 |
+| `DLQ_CONSUMER_GROUP_ID` | `indexer-dlq-group` | 아니오 | DLQ Consumer 그룹 ID |
 
 ### 4. 인프라 (docker-compose 추가)
 
@@ -661,11 +688,19 @@ indexer/src/test/kotlin/com/vonkernel/lit/indexer/
   - 배치 임베딩 실패 시 전체 null embedding으로 색인 계속 진행
   - 배치 색인 실패 시 예외 전파
   - 빈 리스트 입력 시 아무 작업 안 함
-- `AnalysisResultEventListenerTest`: Kafka 이벤트 배치 처리, CDC 이벤트 필터링
+- `AnalysisResultEventListenerTest`: Kafka 이벤트 배치 처리, CDC 이벤트 필터링, DLQ 발행
   - CREATE 이벤트(`op=c`, `op=r`) 배치 수집 후 `indexAll` 호출
   - non-create 이벤트 필터링 (indexAll 호출 안 함)
   - 역직렬화 실패 레코드 skip 후 유효 레코드만 배치 처리
-  - 배치 인덱싱 실패 시 예외 전파 없이 로깅
+  - 배치 인덱싱 실패 시 각 레코드를 DLQ로 발행
+  - DLQ 발행 실패해도 나머지 레코드 계속 발행
+- `DlqEventListenerTest`: DLQ 이벤트 재처리, 재시도 로직
+  - 정상 재인덱싱 성공
+  - max retries 초과 시 메시지 폐기
+  - 재처리 실패 시 retryCount 증가 후 DLQ 재발행
+  - non-create 이벤트 무시
+  - retry header 없을 시 0으로 처리
+  - DLQ 재발행 실패해도 예외 전파 없이 로깅
 - `DebeziumOutboxEventTest`: CDC 이벤트 역직렬화 정확성
   - Debezium Envelope 파싱
   - `payload` 필드 이중 역직렬화 (JSON 문자열 → AnalysisResult)
@@ -758,12 +793,39 @@ indexer/src/test/kotlin/com/vonkernel/lit/indexer/
 
 ### 6. 에러 핸들링 전략
 
-- **역직렬화 실패 격리**: 배치 내 개별 레코드의 파싱 실패는 로깅 후 skip, 유효 레코드만 배치 처리
-- **배치 인덱싱 실패**: `runCatching`으로 감싸 예외 전파 없이 로깅
+- **역직렬화 실패 격리**: 배치 내 개별 레코드의 파싱 실패는 로깅 후 skip, 유효 레코드만 배치 처리 (DLQ로 보내지 않음 - poison pill)
+- **배치 인덱싱 실패 → DLQ**: `runCatching`으로 감싸 예외 전파 없이 개별 레코드를 DLQ로 발행
 - **임베딩 실패 허용**: 배치 임베딩 전체 실패 시 null로 대체하여 색인 계속 진행
 - **`ArticleIndexingException`**: 단건 인덱싱 실패 시 `articleId`를 포함한 구조화된 예외 로깅
 
-### 7. OpenSearch 인덱스 매핑 외부화
+### 7. DLQ (Dead Letter Queue) 전략
+
+**방식**: 인덱싱 실패 시 별도 Kafka 토픽으로 발행하여 재처리
+
+**메커니즘**:
+```
+배치 인덱싱 실패
+    ↓
+AnalysisResultEventListener: 개별 레코드를 DLQ로 발행 (retryCount=0)
+    ↓
+DlqEventListener: 단건 소비 (max-poll-records=1, ackMode=RECORD)
+    ↓
+retryCount < maxRetries?
+    ├─ Yes → 재인덱싱 시도
+    │         ├─ 성공 → 완료 (offset commit)
+    │         └─ 실패 → DLQ 재발행 (retryCount+1)
+    └─ No → 폐기 (offset commit, 로깅)
+```
+
+**설계 포인트**:
+- **Analyzer DLQ 패턴 준수**: analyzer의 DLQ 구현과 동일한 패턴 적용
+- **배치 실패 시 개별 발행**: 배치 인덱싱 실패 시 각 레코드를 개별적으로 DLQ로 발행
+- **Outdated 체크 불필요**: OpenSearch는 articleId 기준 upsert로 멱등성 보장
+- **파싱 실패는 DLQ 제외**: 역직렬화 실패 레코드는 poison pill로 간주하여 drop
+- **dlq-retry-count 헤더**: 재시도 횟수를 Kafka 메시지 헤더로 전달
+- **idempotent producer**: `acks=all`, `enable.idempotence=true`로 정확히 한 번 전달 보장
+
+### 8. OpenSearch 인덱스 매핑 외부화
 
 **방식**: 인덱스 매핑을 `resources/opensearch/article-index-mapping.json`에 JSON 파일로 관리
 

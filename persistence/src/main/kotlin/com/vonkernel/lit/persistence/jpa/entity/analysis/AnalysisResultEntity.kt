@@ -43,7 +43,10 @@ class AnalysisResultEntity(
     var refinedArticle: RefinedArticleEntity? = null,
 
     @OneToOne(mappedBy = "analysisResult", fetch = FetchType.LAZY, cascade = [CascadeType.ALL], orphanRemoval = true)
-    var topicAnalysis: TopicAnalysisEntity? = null
+    var topicAnalysis: TopicAnalysisEntity? = null,
+
+    @Column(name = "article_updated_at")
+    var articleUpdatedAt: ZonedDateTime? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

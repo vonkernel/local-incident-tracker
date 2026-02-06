@@ -3,6 +3,7 @@ package com.vonkernel.lit.indexer.adapter.inbound.consumer
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.vonkernel.lit.indexer.domain.port.DlqPublisher
 import com.vonkernel.lit.indexer.domain.service.ArticleIndexingService
 import io.mockk.*
 import org.apache.kafka.clients.consumer.ConsumerRecord
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test
 class AnalysisResultEventListenerTest {
 
     private val articleIndexingService = mockk<ArticleIndexingService>()
+    private val dlqPublisher = mockk<DlqPublisher>()
     private val objectMapper = jacksonObjectMapper()
         .registerModule(JavaTimeModule())
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -56,7 +58,7 @@ class AnalysisResultEventListenerTest {
 
     @BeforeEach
     fun setUp() {
-        listener = AnalysisResultEventListener(articleIndexingService, objectMapper)
+        listener = AnalysisResultEventListener(articleIndexingService, dlqPublisher, objectMapper)
     }
 
     @Test
@@ -103,12 +105,45 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `handles batch indexing failure without propagating`() {
+    fun `handles batch indexing failure and publishes to DLQ`() {
         coEvery { articleIndexingService.indexAll(any()) } throws RuntimeException("Batch indexing failed")
+        coEvery { dlqPublisher.publish(any(), any(), any()) } just Runs
         val record = ConsumerRecord("topic", 0, 0L, "key", validPayload)
 
         // Should not throw
         listener.onAnalysisResultEvents(listOf(record))
+
+        coVerify(exactly = 1) {
+            dlqPublisher.publish(validPayload, 0, "2026-01-30-001")
+        }
+    }
+
+    @Test
+    fun `publishes each failed record to DLQ on batch failure`() {
+        coEvery { articleIndexingService.indexAll(any()) } throws RuntimeException("Batch indexing failed")
+        coEvery { dlqPublisher.publish(any(), any(), any()) } just Runs
+        val record1 = ConsumerRecord("topic", 0, 0L, "key1", validPayload)
+        val record2 = ConsumerRecord("topic", 0, 1L, "key2", validPayload2)
+
+        listener.onAnalysisResultEvents(listOf(record1, record2))
+
+        coVerify(exactly = 1) { dlqPublisher.publish(validPayload, 0, "2026-01-30-001") }
+        coVerify(exactly = 1) { dlqPublisher.publish(validPayload2, 0, "2026-01-30-002") }
+    }
+
+    @Test
+    fun `continues publishing to DLQ even if one publish fails`() {
+        coEvery { articleIndexingService.indexAll(any()) } throws RuntimeException("Batch indexing failed")
+        coEvery { dlqPublisher.publish(validPayload, 0, "2026-01-30-001") } throws RuntimeException("DLQ publish failed")
+        coEvery { dlqPublisher.publish(validPayload2, 0, "2026-01-30-002") } just Runs
+        val record1 = ConsumerRecord("topic", 0, 0L, "key1", validPayload)
+        val record2 = ConsumerRecord("topic", 0, 1L, "key2", validPayload2)
+
+        // Should not throw even if first DLQ publish fails
+        listener.onAnalysisResultEvents(listOf(record1, record2))
+
+        coVerify(exactly = 1) { dlqPublisher.publish(validPayload, 0, "2026-01-30-001") }
+        coVerify(exactly = 1) { dlqPublisher.publish(validPayload2, 0, "2026-01-30-002") }
     }
 
     @Test

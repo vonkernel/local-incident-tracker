@@ -16,17 +16,11 @@ class OpenSearchClientConfig(
 ) {
 
     @Bean
-    fun openSearchClient(): OpenSearchClient {
-        val httpHost = HttpHost("http", host, port)
-        val transport = ApacheHttpClient5TransportBuilder
-            .builder(httpHost)
+    fun openSearchClient(): OpenSearchClient =
+        HttpHost("http", host, port)
+            .let { ApacheHttpClient5TransportBuilder.builder(it) }
             .setMapper(JacksonJsonpMapper())
-            .setHttpClientConfigCallback { httpClientBuilder ->
-                httpClientBuilder.setConnectionManager(
-                    PoolingAsyncClientConnectionManagerBuilder.create().build()
-                )
-            }
+            .setHttpClientConfigCallback { it.setConnectionManager(PoolingAsyncClientConnectionManagerBuilder.create().build()) }
             .build()
-        return OpenSearchClient(transport)
-    }
+            .let { OpenSearchClient(it) }
 }

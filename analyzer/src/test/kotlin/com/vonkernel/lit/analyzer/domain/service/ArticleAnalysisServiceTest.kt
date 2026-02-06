@@ -79,8 +79,7 @@ class ArticleAnalysisServiceTest {
         coEvery { keywordsExtractor.process(testArticle.articleId, testRefinedArticle.summary) } returns testKeywords
         coEvery { topicExtractor.process(testArticle.articleId, testRefinedArticle.summary) } returns testTopic
         coEvery { locationsExtractor.process(testArticle.articleId, testRefinedArticle.title, testRefinedArticle.content) } returns locations
-        every { analysisResultRepository.existsByArticleId(testArticle.articleId) } returns false
-        every { analysisResultRepository.save(any()) } answers { firstArg() }
+        every { analysisResultRepository.save(any(), any()) } answers { firstArg() }
     }
 
     @Test
@@ -90,7 +89,7 @@ class ArticleAnalysisServiceTest {
         setupDefaultAnalyzerMocks(listOf(testLocation))
 
         val savedSlot = slot<AnalysisResult>()
-        every { analysisResultRepository.save(capture(savedSlot)) } answers { firstArg() }
+        every { analysisResultRepository.save(capture(savedSlot), any()) } answers { firstArg() }
 
         // When
         service.analyze(testArticle)
@@ -107,34 +106,15 @@ class ArticleAnalysisServiceTest {
     }
 
     @Test
-    @DisplayName("기존 분석 결과 존재 시 삭제 후 재분석한다 (idempotency)")
-    fun analyze_existingResult_deletesBeforeReanalysis() = runTest {
+    @DisplayName("분석 결과 저장 시 repository.save()가 정확히 1번 호출된다")
+    fun analyze_callsSaveOnce() = runTest {
         // Given
         setupDefaultAnalyzerMocks()
-        every { analysisResultRepository.existsByArticleId(testArticle.articleId) } returns true
-        every { analysisResultRepository.deleteByArticleId(testArticle.articleId) } returns Unit
 
         // When
         service.analyze(testArticle)
 
         // Then
-        verify(exactly = 1) { analysisResultRepository.existsByArticleId(testArticle.articleId) }
-        verify(exactly = 1) { analysisResultRepository.deleteByArticleId(testArticle.articleId) }
-        verify(exactly = 1) { analysisResultRepository.save(any()) }
-    }
-
-    @Test
-    @DisplayName("기존 분석 결과 없을 시 삭제 호출하지 않는다")
-    fun analyze_noExistingResult_doesNotDelete() = runTest {
-        // Given
-        setupDefaultAnalyzerMocks()
-        every { analysisResultRepository.existsByArticleId(testArticle.articleId) } returns false
-
-        // When
-        service.analyze(testArticle)
-
-        // Then
-        verify(exactly = 1) { analysisResultRepository.existsByArticleId(testArticle.articleId) }
-        verify(exactly = 0) { analysisResultRepository.deleteByArticleId(any()) }
+        verify(exactly = 1) { analysisResultRepository.save(any(), any()) }
     }
 }
