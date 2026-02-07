@@ -62,7 +62,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index assembles document with embedding and indexes`() = runTest {
+    fun `index는 임베딩과 함께 문서를 조립하여 인덱싱한다`() = runTest {
         val embeddingBytes = byteArrayOf(1, 2, 3, 4)
         coEvery { embedder.embed(any()) } returns embeddingBytes
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
@@ -80,7 +80,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index proceeds with null embedding when embedder fails`() = runTest {
+    fun `임베더 실패 시 null 임베딩으로 인덱싱 진행`() = runTest {
         coEvery { embedder.embed(any()) } throws RuntimeException("OpenAI API error")
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { articleIndexer.index(any()) } just Runs
@@ -96,7 +96,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index throws ArticleIndexingException when searchIndexer fails`() = runTest {
+    fun `인덱서 실패 시 ArticleIndexingException 발생`() = runTest {
         coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { articleIndexer.index(any()) } throws RuntimeException("OpenSearch connection refused")
@@ -110,7 +110,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index skips stale event when existing document is newer`() = runTest {
+    fun `기존 문서가 더 최신이면 이벤트 건너뜀`() = runTest {
         val existingModifiedAt = Instant.parse("2026-01-30T10:00:00Z")
         val eventAnalyzedAt = Instant.parse("2026-01-30T08:33:30Z")
         coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns existingModifiedAt
@@ -122,7 +122,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index skips stale event when existing document has same timestamp`() = runTest {
+    fun `기존 문서와 타임스탬프가 같으면 이벤트 건너뜀`() = runTest {
         val timestamp = Instant.parse("2026-01-30T08:33:30Z")
         coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns timestamp
 
@@ -133,7 +133,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index proceeds when existing document is older`() = runTest {
+    fun `기존 문서가 더 오래되면 인덱싱 진행`() = runTest {
         val existingModifiedAt = Instant.parse("2026-01-30T06:00:00Z")
         val eventAnalyzedAt = Instant.parse("2026-01-30T08:33:30Z")
         coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns existingModifiedAt
@@ -146,7 +146,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index proceeds without analyzedAt and skips staleness check`() = runTest {
+    fun `analyzedAt 없으면 신선도 검사 생략하고 인덱싱 진행`() = runTest {
         coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
         coEvery { articleIndexer.index(any()) } just Runs
 
@@ -157,7 +157,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index proceeds when staleness check fails`() = runTest {
+    fun `신선도 검사 실패 시 인덱싱 진행`() = runTest {
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } throws RuntimeException("OpenSearch unavailable")
         coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
         coEvery { articleIndexer.index(any()) } just Runs
@@ -168,7 +168,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `indexAll assembles documents with batch embeddings and indexes`() = runTest {
+    fun `indexAll은 배치 임베딩으로 문서를 조립하여 인덱싱한다`() = runTest {
         val embedding1 = byteArrayOf(1, 2, 3, 4)
         val embedding2 = byteArrayOf(5, 6, 7, 8)
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
@@ -190,7 +190,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `indexAll proceeds with null embeddings when batch embedding fails`() = runTest {
+    fun `배치 임베딩 실패 시 null 임베딩으로 인덱싱 진행`() = runTest {
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { embedder.embedAll(any()) } throws RuntimeException("OpenAI API error")
         coEvery { articleIndexer.indexAll(any()) } just Runs
@@ -207,7 +207,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `indexAll propagates exception when indexer fails`() = runTest {
+    fun `인덱서 실패 시 예외 전파`() = runTest {
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { embedder.embedAll(any()) } returns listOf(byteArrayOf(1, 2), byteArrayOf(3, 4))
         coEvery { articleIndexer.indexAll(any()) } throws RuntimeException("OpenSearch bulk error")
@@ -221,7 +221,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `indexAll does nothing for empty list`() = runTest {
+    fun `빈 리스트에 대해 아무 작업도 하지 않음`() = runTest {
         service.indexAll(emptyList())
 
         coVerify(exactly = 0) { embedder.embedAll(any()) }
@@ -229,7 +229,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `indexAll filters out stale events in batch`() = runTest {
+    fun `배치에서 오래된 이벤트 필터링`() = runTest {
         val existingModifiedAt = Instant.parse("2026-01-30T10:00:00Z")
         coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns existingModifiedAt
         coEvery { articleIndexer.findModifiedAtByArticleId("test-article-002") } returns null
@@ -247,7 +247,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `indexAll skips all when all events are stale`() = runTest {
+    fun `모든 이벤트가 오래되면 전부 건너뜀`() = runTest {
         coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns Instant.parse("2026-01-30T10:00:00Z")
         coEvery { articleIndexer.findModifiedAtByArticleId("test-article-002") } returns Instant.parse("2026-01-30T10:00:00Z")
 
@@ -259,7 +259,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index retries and succeeds on transient failure`() = runTest {
+    fun `일시적 실패 시 재시도 후 성공`() = runTest {
         coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { articleIndexer.index(any()) } throws RuntimeException("transient") andThen Unit
@@ -270,7 +270,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `index throws after retries exhausted`() = runTest {
+    fun `재시도 소진 후 예외 발생`() = runTest {
         coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { articleIndexer.index(any()) } throws RuntimeException("persistent failure")
@@ -285,7 +285,7 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
-    fun `indexAll retries and succeeds on transient failure`() = runTest {
+    fun `indexAll 일시적 실패 시 재시도 후 성공`() = runTest {
         coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { embedder.embedAll(any()) } returns listOf(byteArrayOf(1, 2), byteArrayOf(3, 4))
         coEvery { articleIndexer.indexAll(any()) } throws RuntimeException("transient") andThen Unit

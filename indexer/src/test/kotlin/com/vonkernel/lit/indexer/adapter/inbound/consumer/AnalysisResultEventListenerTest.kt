@@ -65,7 +65,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `processes CREATE events as batch`() {
+    fun `CREATE 이벤트를 배치로 처리한다`() {
         coEvery { articleIndexingService.indexAll(any(), any()) } just Runs
         val record1 = ConsumerRecord("topic", 0, 0L, "key1", validPayload)
         val record2 = ConsumerRecord("topic", 0, 1L, "key2", validPayload2)
@@ -89,7 +89,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `ignores non-create events`() {
+    fun `CREATE가 아닌 이벤트는 무시한다`() {
         val record = ConsumerRecord("topic", 0, 0L, "key", updatePayload)
 
         listener.onAnalysisResultEvents(listOf(record))
@@ -98,7 +98,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `publishes invalid records to DLQ and processes valid ones in batch`() {
+    fun `유효하지 않은 레코드는 DLQ로 발행하고 유효한 레코드는 배치 처리한다`() {
         val badPayload = "invalid json"
         val badRecord = ConsumerRecord("topic", 0, 0L, "key1", badPayload)
         val goodRecord = ConsumerRecord("topic", 0, 1L, "key2", validPayload)
@@ -118,7 +118,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `batch failure triggers per-record fallback then DLQ for still-failing records`() {
+    fun `배치 실패 시 레코드별 폴백 후 여전히 실패하는 레코드는 DLQ로 전송한다`() {
         coEvery { articleIndexingService.indexAll(any(), any()) } throws RuntimeException("Batch indexing failed")
         coEvery { articleIndexingService.index(match { it.articleId == "2026-01-30-001" }, any()) } throws RuntimeException("Still failing")
         coEvery { articleIndexingService.index(match { it.articleId == "2026-01-30-002" }, any()) } just Runs
@@ -134,7 +134,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `batch failure with all per-record fallbacks succeeding sends nothing to DLQ`() {
+    fun `배치 실패 후 모든 레코드별 폴백이 성공하면 DLQ에 전송하지 않는다`() {
         coEvery { articleIndexingService.indexAll(any(), any()) } throws RuntimeException("Batch failed")
         coEvery { articleIndexingService.index(any(), any()) } just Runs
         val record1 = ConsumerRecord("topic", 0, 0L, "key1", validPayload)
@@ -147,7 +147,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `partial bulk failure retries only failed articleIds individually`() {
+    fun `부분 bulk 실패 시 실패한 articleId만 개별 재시도한다`() {
         val partialException = BulkIndexingPartialFailureException(
             failedArticleIds = listOf("2026-01-30-002"),
             message = "Partial failure"
@@ -169,7 +169,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `DLQ publish failure throws to prevent offset commit`() {
+    fun `DLQ 발행 실패 시 오프셋 커밋 방지를 위해 예외 발생`() {
         coEvery { articleIndexingService.indexAll(any(), any()) } throws RuntimeException("Batch failed")
         coEvery { articleIndexingService.index(any(), any()) } throws RuntimeException("Per-record failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } throws RuntimeException("DLQ publish failed")
@@ -181,7 +181,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `deserialization failure publishes raw record to DLQ`() {
+    fun `역직렬화 실패 시 원시 레코드를 DLQ에 발행한다`() {
         val badPayload = "invalid json"
         val badRecord = ConsumerRecord("topic", 0, 0L, "key1", badPayload)
 
@@ -194,7 +194,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `deserialization DLQ publish failure throws to prevent offset commit`() {
+    fun `역직렬화 DLQ 발행 실패 시 오프셋 커밋 방지를 위해 예외 발생`() {
         val badPayload = "invalid json"
         val badRecord = ConsumerRecord("topic", 0, 0L, "key1", badPayload)
 
@@ -206,7 +206,7 @@ class AnalysisResultEventListenerTest {
     }
 
     @Test
-    fun `does not call indexAll when all records are non-create`() {
+    fun `모든 레코드가 CREATE가 아니면 indexAll을 호출하지 않는다`() {
         val record = ConsumerRecord("topic", 0, 0L, "key", updatePayload)
 
         listener.onAnalysisResultEvents(listOf(record))

@@ -62,7 +62,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `index calls OpenSearch client with correct index and document id`() = runTest {
+    fun `index는 올바른 인덱스와 문서 ID로 OpenSearch 클라이언트를 호출한다`() = runTest {
         val indexResponse = mockk<IndexResponse>()
         every { indexResponse.result() } returns Result.Created
 
@@ -78,7 +78,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `delete calls OpenSearch client with correct index and id`() = runTest {
+    fun `delete는 올바른 인덱스와 ID로 OpenSearch 클라이언트를 호출한다`() = runTest {
         val deleteResponse = mockk<DeleteResponse>()
         every { deleteResponse.result() } returns Result.Deleted
 
@@ -94,7 +94,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `indexAll calls OpenSearch bulk API with all documents`() = runTest {
+    fun `indexAll은 모든 문서로 OpenSearch bulk API를 호출한다`() = runTest {
         val bulkResponse = mockk<BulkResponse>()
         every { bulkResponse.errors() } returns false
         every { bulkResponse.items() } returns emptyList()
@@ -109,7 +109,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `indexAll does nothing for empty list`() = runTest {
+    fun `indexAll은 빈 리스트에 대해 아무 작업도 하지 않는다`() = runTest {
         adapter.indexAll(emptyList())
 
         verify(exactly = 0) { openSearchClient.bulk(any<BulkRequest>()) }
@@ -117,7 +117,7 @@ class OpenSearchArticleIndexerTest {
 
     @Suppress("UNCHECKED_CAST")
     @Test
-    fun `findModifiedAtByArticleId returns instant when document exists`() = runTest {
+    fun `findModifiedAtByArticleId는 문서 존재 시 Instant를 반환한다`() = runTest {
         val getResponse = mockk<GetResponse<Any>>()
         every { getResponse.found() } returns true
         every { getResponse.source() } returns mapOf("modifiedAt" to "2026-01-30T08:33:30Z")
@@ -136,7 +136,7 @@ class OpenSearchArticleIndexerTest {
 
     @Suppress("UNCHECKED_CAST")
     @Test
-    fun `findModifiedAtByArticleId returns null when document not found`() = runTest {
+    fun `findModifiedAtByArticleId는 문서 미발견 시 null을 반환한다`() = runTest {
         val getResponse = mockk<GetResponse<Any>>()
         every { getResponse.found() } returns false
 
@@ -153,7 +153,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `findModifiedAtByArticleId returns null when OpenSearch throws`() = runTest {
+    fun `findModifiedAtByArticleId는 OpenSearch 예외 시 null을 반환한다`() = runTest {
         every {
             openSearchClient.get(
                 any<java.util.function.Function<GetRequest.Builder, ObjectBuilder<GetRequest>>>(),
@@ -167,7 +167,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `indexAll throws BulkIndexingPartialFailureException on partial failure`() = runTest {
+    fun `indexAll은 부분 실패 시 BulkIndexingPartialFailureException을 발생시킨다`() = runTest {
         val failedItem = mockk<BulkResponseItem>()
         val errorCause = mockk<ErrorCause>()
         every { failedItem.id() } returns "test-002"
@@ -193,7 +193,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `indexAll succeeds when bulk response has no errors`() = runTest {
+    fun `indexAll은 bulk 응답에 오류가 없으면 성공한다`() = runTest {
         val bulkResponse = mockk<BulkResponse>()
         every { bulkResponse.errors() } returns false
 
