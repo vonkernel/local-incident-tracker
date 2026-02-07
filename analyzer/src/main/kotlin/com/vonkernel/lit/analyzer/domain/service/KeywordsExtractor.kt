@@ -1,6 +1,6 @@
-package com.vonkernel.lit.analyzer.domain.service;
+package com.vonkernel.lit.analyzer.domain.service
 
-import com.vonkernel.lit.analyzer.domain.port.analyzer.KeywordAnalyzer;
+import com.vonkernel.lit.analyzer.domain.port.analyzer.KeywordAnalyzer
 import com.vonkernel.lit.core.entity.Keyword
 import org.springframework.stereotype.Service
 
