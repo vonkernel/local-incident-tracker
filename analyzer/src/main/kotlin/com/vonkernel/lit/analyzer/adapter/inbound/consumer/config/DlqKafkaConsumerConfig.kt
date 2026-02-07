@@ -17,8 +17,8 @@ class DlqKafkaConsumerConfig(
 ) {
 
     @Bean("dlqConsumerFactory")
-    fun dlqConsumerFactory(): ConsumerFactory<String, String> {
-        val props = mapOf(
+    fun dlqConsumerFactory(): ConsumerFactory<String, String> =
+        mapOf(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG to bootstrapServers,
             ConsumerConfig.GROUP_ID_CONFIG to dlqGroupId,
             ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG to StringDeserializer::class.java,
@@ -26,9 +26,7 @@ class DlqKafkaConsumerConfig(
             ConsumerConfig.AUTO_OFFSET_RESET_CONFIG to "earliest",
             ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG to false,
             ConsumerConfig.MAX_POLL_RECORDS_CONFIG to 1
-        )
-        return DefaultKafkaConsumerFactory(props)
-    }
+        ).let { DefaultKafkaConsumerFactory(it) }
 
     @Bean("dlqKafkaListenerContainerFactory")
     fun dlqKafkaListenerContainerFactory(): ConcurrentKafkaListenerContainerFactory<String, String> =

@@ -23,33 +23,32 @@ class LocationsExtractor(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    suspend fun process(articleId: String, title: String, content: String): List<Location> {
-        val extracted = withRetry("extract-location", articleId) {
-            locationAnalyzer.analyze(title, content)
-        }
-        val validated = withRetry("validate-location", articleId) {
-            locationValidator.validate(title, content, extracted)
-        }
-        return resolveLocations(articleId, validated)
-    }
+    suspend fun process(articleId: String, title: String, content: String): List<Location> =
+        extractLocations(articleId, title, content)
+            .let { validateLocations(articleId, title, content, it) }
+            .let { resolveLocations(articleId, it) }
+
+    private suspend fun extractLocations(articleId: String, title: String, content: String): List<ExtractedLocation> =
+        withRetry("extract-location", articleId) { locationAnalyzer.analyze(title, content) }
+
+    private suspend fun validateLocations(
+        articleId: String, title: String, content: String, extracted: List<ExtractedLocation>
+    ): List<ExtractedLocation> =
+        withRetry("validate-location", articleId) { locationValidator.validate(title, content, extracted) }
 
     private suspend fun resolveLocations(articleId: String, extractedLocations: List<ExtractedLocation>): List<Location> =
         coroutineScope {
             extractedLocations
-                .map { extracted ->
-                    async {
-                        try {
-                            resolveLocation(articleId, extracted)
-                        } catch (e: Exception) {
-                            log.warn("Failed to geocode location '{}' (type={}) for article {}: {}",
-                                extracted.name, extracted.type, articleId, e.message)
-                            listOf(unresolvedLocation(extracted.name))
-                        }
-                    }
-                }
+                .map { extracted -> async { resolveLocationOrFallback(articleId, extracted) } }
                 .awaitAll()
                 .flatten()
         }
+
+    private suspend fun resolveLocationOrFallback(articleId: String, extracted: ExtractedLocation): List<Location> =
+        runCatching { resolveLocation(articleId, extracted) }
+            .onFailure { log.warn("Failed to geocode location '{}' (type={}) for article {}: {}",
+                extracted.name, extracted.type, articleId, it.message) }
+            .getOrElse { listOf(unresolvedLocation(extracted.name)) }
 
     private suspend fun resolveLocation(articleId: String, extracted: ExtractedLocation): List<Location> =
         when (extracted.type) {

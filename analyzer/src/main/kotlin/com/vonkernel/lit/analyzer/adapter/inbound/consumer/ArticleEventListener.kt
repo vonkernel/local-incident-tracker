@@ -44,44 +44,53 @@ class ArticleEventListener(
         }
     }
 
+    private data class ParsedArticleEvent(
+        val articleId: String,
+        val article: com.vonkernel.lit.core.entity.Article,
+        val articleUpdatedAt: Instant?,
+    )
+
     private suspend fun processRecord(record: ConsumerRecord<String, String>) {
-        var articleId: String? = null
-
-        runCatching {
-            val envelope = objectMapper.readValue(record.value(), DebeziumEnvelope::class.java)
-                .takeIf { it.op in CREATE_OPS }
-
-            val payload = envelope?.after
-                ?.also {
-                    articleId = it.articleId
-                    log.info("Received article CDC event: articleId={}", it.articleId)
+        parseRecordOrNull(record)?.let { parsed ->
+            runCatching { articleAnalysisService.analyze(parsed.article, parsed.articleUpdatedAt) }
+                .onFailure { e ->
+                    logAnalysisFailure(e, parsed.articleId, record.offset())
+                    publishToDlqSafely(record.value(), parsed.articleId, record.offset())
                 }
-                ?: run {
-                    if (envelope != null) {
-                        log.warn("Received create event with null 'after' payload, offset={}", record.offset())
-                    } else {
-                        log.debug("Ignoring non-create CDC event, offset={}", record.offset())
-                    }
-                    return
-                }
-
-            val article = payload.toArticle()
-            val articleUpdatedAt = payload.updatedAt?.let { Instant.parse(it) }
-
-            articleAnalysisService.analyze(article, articleUpdatedAt)
-        }.onFailure { e ->
-            when (e) {
-                is ArticleAnalysisException ->
-                    log.error("Failed to analyze article {} at offset={}: {}", e.articleId, record.offset(), e.message, e)
-                else ->
-                    log.error("Failed to process article event at offset={}: {}", record.offset(), e.message, e)
-            }
-
-            runCatching {
-                dlqPublisher.publish(record.value(), 0, articleId)
-            }.onFailure { dlqError ->
-                log.error("Failed to publish to DLQ at offset={}: {}", record.offset(), dlqError.message, dlqError)
-            }
         }
+    }
+
+    private suspend fun parseRecordOrNull(record: ConsumerRecord<String, String>): ParsedArticleEvent? =
+        deserializeOrNull(record)
+            ?.takeIf { it.op in CREATE_OPS }
+            ?.after
+            ?.let { payload ->
+                ParsedArticleEvent(
+                    articleId = payload.articleId,
+                    article = payload.toArticle(),
+                    articleUpdatedAt = payload.updatedAt?.let { Instant.parse(it) }
+                )
+            }
+
+    private suspend fun deserializeOrNull(record: ConsumerRecord<String, String>): DebeziumEnvelope? =
+        runCatching { objectMapper.readValue(record.value(), DebeziumEnvelope::class.java) }
+            .onFailure { e ->
+                log.error("Failed to parse record at offset={}: {}", record.offset(), e.message, e)
+                publishToDlqSafely(record.value(), null, record.offset())
+            }
+            .getOrNull()
+
+    private fun logAnalysisFailure(e: Throwable, articleId: String, offset: Long) {
+        when (e) {
+            is ArticleAnalysisException ->
+                log.error("Failed to analyze article {} at offset={}: {}", e.articleId, offset, e.message, e)
+            else ->
+                log.error("Failed to process article event at offset={}: {}", offset, e.message, e)
+        }
+    }
+
+    private suspend fun publishToDlqSafely(value: String, articleId: String?, offset: Long) {
+        runCatching { dlqPublisher.publish(value, 0, articleId) }
+            .onFailure { e -> log.error("Failed to publish to DLQ at offset={}: {}", offset, e.message, e) }
     }
 }

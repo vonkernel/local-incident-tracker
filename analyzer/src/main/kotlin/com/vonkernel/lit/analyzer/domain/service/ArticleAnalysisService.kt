@@ -26,20 +26,21 @@ class ArticleAnalysisService(
     suspend fun analyze(article: Article, articleUpdatedAt: Instant? = null) {
         log.info("Starting analysis for article: {}", article.articleId)
 
-        try {
-            analyzeArticle(article)
-                .let { analysisResultRepository.save(it, articleUpdatedAt) }
+        analyzeOrThrow(article)
+            .let { analysisResultRepository.save(it, articleUpdatedAt) }
 
-            log.info("Analysis completed and saved for article: {}", article.articleId)
-        } catch (e: Exception) {
-            log.error("Analysis failed for article {}: {}", article.articleId, e.message, e)
-            throw ArticleAnalysisException(
-                articleId = article.articleId,
-                message = "Analysis failed for article ${article.articleId}",
-                cause = e
-            )
-        }
+        log.info("Analysis completed and saved for article: {}", article.articleId)
     }
+
+    private suspend fun analyzeOrThrow(article: Article): AnalysisResult =
+        runCatching { analyzeArticle(article) }
+            .getOrElse { e ->
+                throw ArticleAnalysisException(
+                    articleId = article.articleId,
+                    message = "Analysis failed for article ${article.articleId}",
+                    cause = e
+                )
+            }
 
     private suspend fun analyzeArticle(article: Article): AnalysisResult = coroutineScope {
         articleRefiner.process(article).let { refinedArticle ->
