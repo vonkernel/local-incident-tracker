@@ -137,7 +137,7 @@ local-incident-tracker/
 
 | 모듈 | 설명                                                                     |
 |------|------------------------------------------------------------------------|
-| **shared** | 도메인 모델(`Article`, `AnalysisResult` 등), Repository 포트 인터페이스             |
+| **shared** | 도메인 모델(`Article`, `AnalysisResult` 등), Repository 포트 인터페이스 ([README](./shared/README.md)) |
 | **persistence** | JPA Entity, Mapper, Flyway 마이그레이션 ([README](./persistence/README.md))  |
 | **ai-core** | LLM 프롬프트 실행 라이브러리 ([README](./ai-core/README.md))                      |
 | **collector** | 연합뉴스 API 데이터 수집 및 정규화 ([README](./collector/README.md))                |
