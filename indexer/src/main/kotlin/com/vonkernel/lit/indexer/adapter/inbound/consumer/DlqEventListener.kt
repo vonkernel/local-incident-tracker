@@ -43,36 +43,40 @@ class DlqEventListener(
     fun onDlqEvent(record: ConsumerRecord<String, String>) {
         extractRetryCount(record)
             .takeIf { it < maxRetries }
-            ?.let { retryCount -> runBlocking { processRecord(record.value(), retryCount, record.offset()) } }
+            ?.let { retryCount -> runBlocking { processRecord(record, retryCount) } }
             ?: log.warn("DLQ message exceeded max retries ({}), discarding: offset={}", maxRetries, record.offset())
     }
 
-    private suspend fun processRecord(rawValue: String, retryCount: Int, offset: Long) {
-        parseEnvelope(rawValue, offset)
-            ?.let { parsed ->
-                runCatching { articleIndexingService.index(parsed.analysisResult, parsed.analyzedAt) }
-                    .onSuccess { log.info("DLQ: Successfully re-indexed articleId={}, retryCount={}", parsed.articleId, retryCount) }
-                    .onFailure { e ->
-                        log.error("DLQ: Failed to re-index event, offset={}, retryCount={}: {}", offset, retryCount, e.message, e)
-                        republishToDlq(rawValue, retryCount + 1, parsed.articleId, offset)
-                    }
-            }
+    private suspend fun processRecord(record: ConsumerRecord<String, String>, retryCount: Int) {
+        parseEnvelope(record)?.let { parsed ->
+            runCatching { articleIndexingService.index(parsed.analysisResult, parsed.analyzedAt) }
+                .onSuccess { log.info("DLQ: Successfully re-indexed articleId={}, retryCount={}", parsed.articleId, retryCount) }
+                .onFailure { e -> handleReindexFailure(record, retryCount, parsed.articleId, e) }
+        }
     }
 
-    private fun parseEnvelope(rawValue: String, offset: Long): ParsedEnvelope? =
-        runCatching { objectMapper.readValue(rawValue, DebeziumOutboxEnvelope::class.java) }
-            .getOrNull()
-            ?.takeIf { it.op in CREATE_OPS }
-            ?.also { if (it.op !in CREATE_OPS) log.debug("DLQ: Ignoring non-create CDC event, offset={}", offset) }
-            ?.after
-            ?.let { payload ->
-                val (analyzedAt, analysisResult) = payload.toAnalysisResult(objectMapper)
-                ParsedEnvelope(payload.articleId, analysisResult, analyzedAt)
-            }
+    private suspend fun handleReindexFailure(record: ConsumerRecord<String, String>, retryCount: Int, articleId: String, e: Throwable) {
+        log.error("DLQ: Failed to re-index event, offset={}, retryCount={}: {}", record.offset(), retryCount, e.message, e)
+        republishToDlq(record, retryCount + 1, articleId)
+    }
 
-    private suspend fun republishToDlq(rawValue: String, retryCount: Int, articleId: String, offset: Long) {
-        runCatching { dlqPublisher.publish(rawValue, retryCount, articleId) }
-            .onFailure { e -> log.error("DLQ: Failed to re-publish to DLQ, offset={}: {}", offset, e.message, e) }
+    private fun parseEnvelope(record: ConsumerRecord<String, String>): ParsedEnvelope? =
+        deserializeOrNull(record)
+            ?.takeIf { it.op in CREATE_OPS }
+            ?.after
+            ?.let { it.toAnalysisResult(objectMapper) }
+            ?.let { (analyzedAt, result) -> ParsedEnvelope(result.articleId, result, analyzedAt) }
+
+    private fun deserializeOrNull(record: ConsumerRecord<String, String>): DebeziumOutboxEnvelope? =
+        record.value()?.let {
+            runCatching { objectMapper.readValue(it, DebeziumOutboxEnvelope::class.java) }
+                .onFailure { e -> log.error("DLQ: Failed to parse envelope at offset={}: {}", record.offset(), e.message, e) }
+                .getOrNull()
+        }
+
+    private suspend fun republishToDlq(record: ConsumerRecord<String, String>, retryCount: Int, articleId: String) {
+        runCatching { dlqPublisher.publish(record.value(), retryCount, articleId) }
+            .onFailure { e -> log.error("DLQ: Failed to re-publish to DLQ, offset={}: {}", record.offset(), e.message, e) }
     }
 
     private fun extractRetryCount(record: ConsumerRecord<String, String>): Int =

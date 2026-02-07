@@ -4,6 +4,8 @@ import com.vonkernel.lit.core.entity.ArticleIndexDocument
 import com.vonkernel.lit.indexer.domain.port.ArticleIndexer
 import org.opensearch.client.opensearch.OpenSearchClient
 import org.opensearch.client.opensearch.core.BulkRequest
+import org.opensearch.client.opensearch.core.BulkResponse
+import org.opensearch.client.opensearch.core.GetResponse
 import org.opensearch.client.opensearch.core.IndexRequest
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -35,12 +37,7 @@ class OpenSearchArticleIndexer(
         documents.takeIf { it.isNotEmpty() }
             ?.let { buildBulkRequest(it) }
             ?.let { openSearchClient.bulk(it) }
-            ?.also { response ->
-                response.items()
-                    .filter { it.error() != null }
-                    .forEach { log.error("Failed to bulk index document {}: {}", it.id(), it.error()?.reason()) }
-                log.info("Bulk indexed {} documents, errors: {}", documents.size, response.errors())
-            }
+            ?.also { logBulkResult(it, documents.size) }
     }
 
     private fun buildBulkRequest(documents: List<ArticleIndexDocument>): BulkRequest =
@@ -48,18 +45,29 @@ class OpenSearchArticleIndexer(
             builder.operations { op -> op.index { it.index(indexName).id(doc.articleId).document(toMap(doc)) } }
         }.build()
 
+    private fun logBulkResult(response: BulkResponse, count: Int) {
+        response.items()
+            .filter { it.error() != null }
+            .forEach { log.error("Failed to bulk index document {}: {}", it.id(), it.error()?.reason()) }
+        log.info("Bulk indexed {} documents, errors: {}", count, response.errors())
+    }
+
     override suspend fun findModifiedAtByArticleId(articleId: String): Instant? =
+        getDocumentOrNull(articleId)
+            ?.takeIf { it.found() }
+            ?.source()
+            ?.get("modifiedAt")
+            ?.let { Instant.parse(it as String) }
+
+    private fun getDocumentOrNull(articleId: String): GetResponse<Map<*, *>>? =
         runCatching {
             openSearchClient.get(
                 { it.index(indexName).id(articleId).sourceIncludes("modifiedAt") },
                 Map::class.java
             )
         }
+            .onFailure { e -> log.warn("Failed to fetch document from OpenSearch: articleId={}, error={}", articleId, e.message) }
             .getOrNull()
-            ?.takeIf { it.found() }
-            ?.source()
-            ?.get("modifiedAt")
-            ?.let { Instant.parse(it as String) }
 
     override suspend fun delete(articleId: String) {
         openSearchClient.delete { it.index(indexName).id(articleId) }
@@ -99,8 +107,7 @@ class OpenSearchArticleIndexer(
         put("modifiedAt", document.modifiedAt?.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
     }
 
-    private fun ByteArray.toFloatArray(): List<Float> {
-        val buffer = ByteBuffer.wrap(this).order(ByteOrder.BIG_ENDIAN)
-        return List(this.size / 4) { buffer.float }
-    }
+    private fun ByteArray.toFloatArray(): List<Float> =
+        ByteBuffer.wrap(this).order(ByteOrder.BIG_ENDIAN)
+            .let { buffer -> List(this.size / 4) { buffer.float } }
 }

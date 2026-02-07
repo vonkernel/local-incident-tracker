@@ -1,6 +1,7 @@
 package com.vonkernel.lit.indexer.domain.service
 
 import com.vonkernel.lit.core.entity.AnalysisResult
+import com.vonkernel.lit.core.entity.ArticleIndexDocument
 import com.vonkernel.lit.indexer.domain.assembler.IndexDocumentAssembler
 import com.vonkernel.lit.indexer.domain.exception.ArticleIndexingException
 import com.vonkernel.lit.indexer.domain.port.Embedder
@@ -17,76 +18,82 @@ class ArticleIndexingService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     suspend fun index(analysisResult: AnalysisResult, analyzedAt: Instant? = null) {
-        log.info("Starting indexing for article: {}", analysisResult.articleId)
-
         if (isStale(analysisResult.articleId, analyzedAt)) return
 
-        runCatching { embedder.embed(analysisResult.refinedArticle.content) }
-            .onFailure { log.warn("Embedding failed for article {}, proceeding without: {}", analysisResult.articleId, it.message) }
-            .getOrNull()
+        embedOrNull(analysisResult.refinedArticle.content)
             .let { embedding -> IndexDocumentAssembler.assemble(analysisResult, embedding, analyzedAt) }
-            .also { document ->
-                runCatching { articleIndexer.index(document) }
-                    .onSuccess { log.info("Indexing completed for article: {}", analysisResult.articleId) }
-                    .onFailure { e ->
-                        log.error("Indexing failed for article {}: {}", analysisResult.articleId, e.message, e)
-                        throw ArticleIndexingException(
-                            articleId = analysisResult.articleId,
-                            message = "Indexing failed for article ${analysisResult.articleId}",
-                            cause = e
-                        )
-                    }
-            }
+            .also { document -> indexOrThrow(document) }
     }
 
     suspend fun indexAll(analysisResults: List<AnalysisResult>, analyzedAts: List<Instant?> = emptyList()) {
         if (analysisResults.isEmpty()) return
         log.info("Starting batch indexing for {} articles", analysisResults.size)
 
-        val paddedAnalyzedAts = analyzedAts + List(analysisResults.size - analyzedAts.size) { null }
-
-        val freshPairs = analysisResults.zip(paddedAnalyzedAts)
-            .filter { (result, analyzedAt) -> !isStale(result.articleId, analyzedAt) }
-
-        if (freshPairs.isEmpty()) {
-            log.info("All {} articles skipped as stale", analysisResults.size)
-            return
-        }
-
-        val freshResults = freshPairs.map { it.first }
-        val freshAnalyzedAts = freshPairs.map { it.second }
-
-        freshResults
-            .map { it.refinedArticle.content }
-            .let { contents ->
-                runCatching { embedder.embedAll(contents) }
-                    .onFailure { log.warn("Batch embedding failed, proceeding without embeddings: {}", it.message) }
-                    .getOrElse { List(freshResults.size) { null } }
+        filterFresh(analysisResults, analyzedAts)
+            .takeIf { it.isNotEmpty() }
+            ?.unzip()
+            ?.let { (freshResults, freshAnalyzedAts) ->
+                assembleDocuments(freshResults, freshAnalyzedAts)
+                    .also { indexAllAndLog(it, freshResults.size, analysisResults.size) }
             }
-            .zip(freshResults.zip(freshAnalyzedAts)) { embedding, (result, analyzedAt) ->
+            ?: log.info("All {} articles skipped as stale", analysisResults.size)
+    }
+
+    // 복구 가능한 부수효과: 안전한 값 반환
+    private suspend fun embedOrNull(content: String): ByteArray? =
+        runCatching { embedder.embed(content) }
+            .onFailure { log.warn("Embedding failed, proceeding without: {}", it.message) }
+            .getOrNull()
+
+    // 복구 가능한 부수효과: 안전한 값 반환 (배치)
+    private suspend fun embedAllOrNulls(contents: List<String>, size: Int): List<ByteArray?> =
+        runCatching { embedder.embedAll(contents) }
+            .onFailure { log.warn("Batch embedding failed, proceeding without embeddings: {}", it.message) }
+            .getOrElse { List(size) { null } }
+
+    // 복구 불가능한 부수효과: 이름에 throw 의도 표현
+    private suspend fun indexOrThrow(document: ArticleIndexDocument) {
+        runCatching { articleIndexer.index(document) }
+            .onSuccess { log.info("Indexed article: {}", document.articleId) }
+            .getOrElse { e -> throw ArticleIndexingException(document.articleId, "Failed to index article: ${document.articleId}", e) }
+    }
+
+    private suspend fun assembleDocuments(
+        results: List<AnalysisResult>, analyzedAts: List<Instant?>
+    ): List<ArticleIndexDocument> =
+        embedAllOrNulls(results.map { it.refinedArticle.content }, results.size)
+            .zip(results.zip(analyzedAts)) { embedding, (result, analyzedAt) ->
                 IndexDocumentAssembler.assemble(result, embedding, analyzedAt)
             }
-            .also { documents ->
-                articleIndexer.indexAll(documents)
-                log.info("Batch indexing completed for {} articles ({} skipped as stale)",
-                    freshResults.size, analysisResults.size - freshResults.size)
-            }
+
+    private suspend fun indexAllAndLog(documents: List<ArticleIndexDocument>, freshCount: Int, totalCount: Int) {
+        articleIndexer.indexAll(documents)
+        log.info("Batch indexing completed for {} articles ({} skipped as stale)", freshCount, totalCount - freshCount)
     }
 
-    private suspend fun isStale(articleId: String, analyzedAt: Instant?): Boolean {
-        if (analyzedAt == null) return false
+    private suspend fun filterFresh(
+        analysisResults: List<AnalysisResult>,
+        analyzedAts: List<Instant?>,
+    ): List<Pair<AnalysisResult, Instant?>> =
+        padToSize(analyzedAts, analysisResults.size)
+            .let { analysisResults.zip(it) }
+            .filter { (result, analyzedAt) -> !isStale(result.articleId, analyzedAt) }
 
-        val existingModifiedAt = runCatching { articleIndexer.findModifiedAtByArticleId(articleId) }
+    private fun padToSize(list: List<Instant?>, targetSize: Int): List<Instant?> =
+        list + List(targetSize - list.size) { null }
+
+    private suspend fun isStale(articleId: String, analyzedAt: Instant?): Boolean =
+        analyzedAt
+            ?.let { findModifiedAtOrNull(articleId) }
+            ?.let { existing -> existing >= analyzedAt }
+            ?.also { stale ->
+                if (stale) log.info("Skipping stale event for article {}: existing modifiedAt >= event analyzedAt={}", articleId, analyzedAt)
+            }
+            ?: false
+
+    // 복구 가능한 부수효과: 안전한 값 반환
+    private suspend fun findModifiedAtOrNull(articleId: String): Instant? =
+        runCatching { articleIndexer.findModifiedAtByArticleId(articleId) }
             .onFailure { log.warn("Failed to check existing document for article {}, proceeding with indexing: {}", articleId, it.message) }
             .getOrNull()
-            ?: return false
-
-        return if (existingModifiedAt >= analyzedAt) {
-            log.info("Skipping stale event for article {}: existing modifiedAt={} >= event analyzedAt={}",
-                articleId, existingModifiedAt, analyzedAt)
-            true
-        } else {
-            false
-        }
-    }
 }

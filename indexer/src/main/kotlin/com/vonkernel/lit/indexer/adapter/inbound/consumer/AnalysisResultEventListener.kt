@@ -42,41 +42,34 @@ class AnalysisResultEventListener(
         records
             .mapNotNull { parseRecord(it) }
             .takeIf { it.isNotEmpty() }
-            ?.let { parsedRecords ->
-                runBlocking {
-                    runCatching {
-                        articleIndexingService.indexAll(
-                            parsedRecords.map { it.analysisResult },
-                            parsedRecords.map { it.analyzedAt }
-                        )
-                    }
-                        .onFailure { e ->
-                            log.error("Batch indexing failed: {}", e.message, e)
-                            parsedRecords.forEach { publishToDlq(it.rawRecord, it.analysisResult) }
-                        }
-                }
-            }
+            ?.let { runBlocking { indexBatchOrFallbackToDlq(it) } }
+    }
+
+    private suspend fun indexBatchOrFallbackToDlq(parsedRecords: List<ParsedRecord>) {
+        runCatching {
+            articleIndexingService.indexAll(
+                parsedRecords.map { it.analysisResult },
+                parsedRecords.map { it.analyzedAt }
+            )
+        }.onFailure { e ->
+            log.error("Batch indexing failed: {}", e.message, e)
+            parsedRecords.forEach { publishToDlq(it.rawRecord, it.analysisResult) }
+        }
     }
 
     private fun parseRecord(record: ConsumerRecord<String, String>): ParsedRecord? =
-        record.value()
-            ?.let { rawValue ->
-                runCatching { objectMapper.readValue(rawValue, DebeziumOutboxEnvelope::class.java) }
-                    .onFailure { e -> log.error("Failed to parse record at offset={}: {}", record.offset(), e.message, e) }
-                    .getOrNull()
-            }
+        deserializeOrNull(record)
             ?.takeIf { it.op in CREATE_OPS }
-            ?.also { if (it.op !in CREATE_OPS) log.debug("Ignoring non-create CDC event, offset={}", record.offset()) }
             ?.after
-            ?.let { payload ->
-                payload.toAnalysisResult(objectMapper)
-                    .also { (_, result) -> log.info("Parsed analysis result CDC event: articleId={}", result.articleId) }
-                    .let { (analyzedAt, result) -> ParsedRecord(record, result, analyzedAt) }
-            }
-            ?: run {
-                if (record.value() == null) log.debug("Ignoring tombstone record, offset={}", record.offset())
-                null
-            }
+            ?.let { it.toAnalysisResult(objectMapper) }
+            ?.let { (analyzedAt, result) -> ParsedRecord(record, result, analyzedAt) }
+
+    private fun deserializeOrNull(record: ConsumerRecord<String, String>): DebeziumOutboxEnvelope? =
+        record.value()?.let {
+            runCatching { objectMapper.readValue(it, DebeziumOutboxEnvelope::class.java) }
+                .onFailure { e -> log.error("Failed to parse record at offset={}: {}", record.offset(), e.message, e) }
+                .getOrNull()
+        }
 
     private suspend fun publishToDlq(record: ConsumerRecord<String, String>, analysisResult: AnalysisResult) {
         runCatching { dlqPublisher.publish(record.value(), 0, analysisResult.articleId) }
