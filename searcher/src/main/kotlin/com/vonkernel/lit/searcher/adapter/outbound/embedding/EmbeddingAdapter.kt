@@ -17,15 +17,17 @@ class EmbeddingAdapter(
         private const val DIMENSIONS = 128
     }
 
-    override suspend fun embed(text: String): ByteArray {
-        val executor = embeddingExecutors.first { it.supports(MODEL.provider) }
-        val floats = executor.embed(text, MODEL, DIMENSIONS)
-        return floatsToByteArray(floats)
-    }
+    override suspend fun embed(text: String): ByteArray =
+        findExecutor()
+            .embed(text, MODEL, DIMENSIONS)
+            .toByteArray()
 
-    private fun floatsToByteArray(floats: FloatArray): ByteArray {
-        val buffer = ByteBuffer.allocate(floats.size * 4).order(ByteOrder.BIG_ENDIAN)
-        floats.forEach { buffer.putFloat(it) }
-        return buffer.array()
-    }
+    private fun findExecutor(): EmbeddingExecutor =
+        embeddingExecutors.first { it.supports(MODEL.provider) }
+
+    private fun FloatArray.toByteArray(): ByteArray =
+        ByteBuffer.allocate(size * 4)
+            .order(ByteOrder.BIG_ENDIAN)
+            .apply { forEach { putFloat(it) } }
+            .array()
 }

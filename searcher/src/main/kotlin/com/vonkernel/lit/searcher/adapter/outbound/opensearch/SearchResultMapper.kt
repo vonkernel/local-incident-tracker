@@ -10,58 +10,62 @@ import java.time.ZonedDateTime
 
 object SearchResultMapper {
 
-    fun map(response: SearchResponse<ObjectNode>, page: Int, size: Int): SearchResult {
-        val items = response.hits().hits().map { hit ->
-            SearchResultItem(
-                document = mapDocument(hit.source()!!),
-                score = hit.score()?.toFloat(),
-                highlights = hit.highlight().mapValues { (_, v) -> v },
-            )
-        }
-
-        return SearchResult(
-            items = items,
+    fun map(response: SearchResponse<ObjectNode>, page: Int, size: Int): SearchResult =
+        SearchResult(
+            items = response.hits().hits().map { hit ->
+                SearchResultItem(
+                    document = mapDocument(hit.source()!!),
+                    score = hit.score()?.toFloat(),
+                    highlights = hit.highlight().mapValues { (_, v) -> v },
+                )
+            },
             totalHits = response.hits().total()?.value() ?: 0L,
             page = page,
             size = size,
         )
-    }
 
-    private fun mapDocument(source: ObjectNode): ArticleIndexDocument {
-        return ArticleIndexDocument(
+    private fun mapDocument(source: ObjectNode): ArticleIndexDocument =
+        ArticleIndexDocument(
             articleId = source.getText("articleId")!!,
             sourceId = source.getText("sourceId"),
             originId = source.getText("originId"),
             title = source.getText("title"),
             content = source.getText("content"),
             keywords = source.getArray("keywords")?.mapNotNull { it.asText(null) },
-            incidentTypes = source.getArray("incidentTypes")?.map { obj ->
-                IncidentType(code = obj.getText("code")!!, name = obj.getText("name")!!)
-            }?.toSet(),
-            urgency = source.getObject("urgency")?.let { u ->
-                Urgency(name = u.getText("name")!!, level = u["level"].asInt())
-            },
+            incidentTypes = source.getArray("incidentTypes")?.map { mapIncidentType(it) }?.toSet(),
+            urgency = source.getObject("urgency")?.let { mapUrgency(it) },
             incidentDate = source.getText("incidentDate")?.let { ZonedDateTime.parse(it) },
-            geoPoints = source.getArray("geoPoints")?.map { obj ->
-                Coordinate(lat = obj["lat"].asDouble(), lon = obj["lon"].asDouble())
-            },
-            addresses = source.getArray("addresses")?.map { obj ->
-                Address(
-                    regionType = runCatching { RegionType.valueOf(obj.getText("regionType")!!) }
-                        .getOrDefault(RegionType.UNKNOWN),
-                    code = obj.getText("code")!!,
-                    addressName = obj.getText("addressName")!!,
-                    depth1Name = obj.getText("depth1Name"),
-                    depth2Name = obj.getText("depth2Name"),
-                    depth3Name = obj.getText("depth3Name"),
-                )
-            },
+            geoPoints = source.getArray("geoPoints")?.map { mapCoordinate(it) },
+            addresses = source.getArray("addresses")?.map { mapAddress(it) },
             jurisdictionCodes = source.getArray("jurisdictionCodes")
                 ?.mapNotNull { it.asText(null) }?.toSet(),
             writtenAt = source.getText("writtenAt")?.let { ZonedDateTime.parse(it) },
             modifiedAt = source.getText("modifiedAt")?.let { ZonedDateTime.parse(it) },
         )
-    }
+
+    private fun mapIncidentType(node: JsonNode): IncidentType =
+        IncidentType(code = node.getText("code")!!, name = node.getText("name")!!)
+
+    private fun mapUrgency(node: JsonNode): Urgency =
+        Urgency(name = node.getText("name")!!, level = node["level"].asInt())
+
+    private fun mapCoordinate(node: JsonNode): Coordinate =
+        Coordinate(lat = node["lat"].asDouble(), lon = node["lon"].asDouble())
+
+    private fun mapAddress(node: JsonNode): Address =
+        Address(
+            regionType = parseRegionTypeOrDefault(node.getText("regionType")),
+            code = node.getText("code")!!,
+            addressName = node.getText("addressName")!!,
+            depth1Name = node.getText("depth1Name"),
+            depth2Name = node.getText("depth2Name"),
+            depth3Name = node.getText("depth3Name"),
+        )
+
+    private fun parseRegionTypeOrDefault(value: String?): RegionType =
+        value
+            ?.let { runCatching { RegionType.valueOf(it) }.getOrNull() }
+            ?: RegionType.UNKNOWN
 
     private fun JsonNode.getText(key: String): String? =
         get(key)?.takeIf { !it.isNull }?.asText()

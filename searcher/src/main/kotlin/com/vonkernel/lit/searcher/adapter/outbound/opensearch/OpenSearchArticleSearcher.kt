@@ -17,15 +17,10 @@ class OpenSearchArticleSearcher(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    override suspend fun search(criteria: SearchCriteria, queryEmbedding: ByteArray?): SearchResult {
-        val request = SearchQueryBuilder.build(criteria, queryEmbedding, indexName)
-
-        log.debug("Executing search on index '{}' with criteria: {}", indexName, criteria)
-
-        val response = openSearchClient.search(request, ObjectNode::class.java)
-
-        log.debug("Search returned {} hits", response.hits().total()?.value())
-
-        return SearchResultMapper.map(response, criteria.page, criteria.size)
-    }
+    override suspend fun search(criteria: SearchCriteria, queryEmbedding: ByteArray?): SearchResult =
+        SearchQueryBuilder.build(criteria, queryEmbedding, indexName)
+            .also { log.debug("Executing search on index '{}' with criteria: {}", indexName, criteria) }
+            .let { openSearchClient.search(it, ObjectNode::class.java) }
+            .also { log.debug("Search returned {} hits", it.hits().total()?.value()) }
+            .let { SearchResultMapper.map(it, criteria.page, criteria.size) }
 }

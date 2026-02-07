@@ -18,8 +18,8 @@ class ArticleSearchController(
 
     @GetMapping("/search")
     fun search(@ModelAttribute request: SearchRequest): ResponseEntity<SearchResponse> = runBlocking {
-        val criteria = request.toCriteria()
-        val result = articleSearchService.search(criteria)
-        ResponseEntity.ok(SearchResponse.from(result))
+        request.toCriteria()
+            .let { articleSearchService.search(it) }
+            .let { ResponseEntity.ok(SearchResponse.from(it)) }
     }
 }
