@@ -26,60 +26,43 @@ data class OpenAiSpecificOptions(
     val toolChoice: String? = null
 ) {
     companion object {
-        /**
-         * Map을 OpenAiSpecificOptions로 변환
-         *
-         * @param map providerSpecificOptions Map
-         * @return OpenAiSpecificOptions 인스턴스 (null이면 null 반환)
-         * @throws ProviderOptionsConversionException 타입 변환 실패 시
-         */
-        fun fromMap(map: Map<String, Any>?): OpenAiSpecificOptions? {
-            if (map == null) return null
+        fun fromMap(map: Map<String, Any>?): OpenAiSpecificOptions? =
+            map?.let { convertOrThrow(it) }
 
-            return try {
+        private fun convertOrThrow(map: Map<String, Any>): OpenAiSpecificOptions =
+            runCatching {
                 OpenAiSpecificOptions(
                     responseFormat = map["responseFormat"]?.toString(),
-                    seed = map["seed"]?.let { value ->
-                        (value as? Number)?.toInt()
-                            ?: throw ProviderOptionsConversionException(
-                                provider = LlmProvider.OPENAI,
-                                optionKey = "seed",
-                                expectedType = "Number",
-                                actualValue = value
-                            )
-                    },
-                    n = map["n"]?.let { value ->
-                        (value as? Number)?.toInt()
-                            ?: throw ProviderOptionsConversionException(
-                                provider = LlmProvider.OPENAI,
-                                optionKey = "n",
-                                expectedType = "Number",
-                                actualValue = value
-                            )
-                    },
+                    seed = extractNumberOrThrow(map, "seed"),
+                    n = extractNumberOrThrow(map, "n"),
                     user = map["user"]?.toString(),
-                    streamUsage = map["streamUsage"]?.let { value ->
-                        (value as? Boolean)
-                            ?: throw ProviderOptionsConversionException(
-                                provider = LlmProvider.OPENAI,
-                                optionKey = "streamUsage",
-                                expectedType = "Boolean",
-                                actualValue = value
-                            )
-                    },
+                    streamUsage = extractBooleanOrThrow(map, "streamUsage"),
                     tools = map["tools"] as? List<Any>,
                     toolChoice = map["toolChoice"]?.toString()
                 )
-            } catch (e: ProviderOptionsConversionException) {
-                throw e
-            } catch (e: Exception) {
-                throw ProviderOptionsConversionException(
-                    provider = LlmProvider.OPENAI,
-                    optionKey = "unknown",
-                    expectedType = "Unknown",
-                    actualValue = map
-                )
+            }.getOrElse { e ->
+                when (e) {
+                    is ProviderOptionsConversionException -> throw e
+                    else -> throwConversionException("unknown", "Unknown", map)
+                }
             }
-        }
+
+        private fun extractNumberOrThrow(map: Map<String, Any>, key: String): Int? =
+            map[key]?.let { value ->
+                (value as? Number)?.toInt() ?: throwConversionException(key, "Number", value)
+            }
+
+        private fun extractBooleanOrThrow(map: Map<String, Any>, key: String): Boolean? =
+            map[key]?.let { value ->
+                (value as? Boolean) ?: throwConversionException(key, "Boolean", value)
+            }
+
+        private fun throwConversionException(optionKey: String, expectedType: String, actualValue: Any): Nothing =
+            throw ProviderOptionsConversionException(
+                provider = LlmProvider.OPENAI,
+                optionKey = optionKey,
+                expectedType = expectedType,
+                actualValue = actualValue
+            )
     }
 }

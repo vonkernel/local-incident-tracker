@@ -9,6 +9,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.springframework.ai.embedding.EmbeddingRequest
+import org.springframework.ai.embedding.EmbeddingResponse
 import org.springframework.ai.openai.OpenAiEmbeddingOptions
 import org.springframework.stereotype.Component
 import org.springframework.ai.embedding.EmbeddingModel as SpringAiEmbeddingModel
@@ -28,6 +29,11 @@ class OpenAiEmbeddingExecutor(
     private val embeddingModel: SpringAiEmbeddingModel
 ) : EmbeddingExecutor {
 
+    companion object {
+        private const val SINGLE_TIMEOUT_MS = 30_000L
+        private const val BATCH_TIMEOUT_MS = 60_000L
+    }
+
     override fun supports(provider: LlmProvider): Boolean =
         provider == LlmProvider.OPENAI
 
@@ -35,99 +41,93 @@ class OpenAiEmbeddingExecutor(
         text: String,
         model: EmbeddingModel,
         dimensions: Int
-    ): FloatArray = withContext(Dispatchers.IO) {
-        runCatching {
-            withTimeout(30_000L) {
-                embeddingModel.call(
-                    EmbeddingRequest(
-                        listOf(text),
-                        OpenAiEmbeddingOptions.builder()
-                            .model(model.modelId)
-                            .dimensions(dimensions)
-                            .build()
-                    )
-                )
-            }
-        }.fold(
-            onSuccess = { response ->
-                response.results.firstOrNull()?.output
-                    ?: throw LlmApiException(
-                        statusCode = null,
-                        errorBody = null,
-                        message = "No embedding result in response"
-                    )
-            },
-            onFailure = { e ->
-                when (e) {
-                    is AiCoreException -> throw e
-                    is TimeoutCancellationException -> throw LlmTimeoutException(timeoutMs = 30_000L)
-                    else -> handleException(e)
-                }
-            }
-        )
-    }
+    ): FloatArray =
+        buildEmbeddingRequest(listOf(text), model, dimensions)
+            .let { callOrThrow(it, SINGLE_TIMEOUT_MS) }
+            .let { extractSingleOutput(it) }
 
     override suspend fun embedAll(
         texts: List<String>,
         model: EmbeddingModel,
         dimensions: Int
-    ): List<FloatArray> = withContext(Dispatchers.IO) {
-        runCatching {
-            withTimeout(60_000L) {
-                embeddingModel.call(
-                    EmbeddingRequest(
-                        texts,
-                        OpenAiEmbeddingOptions.builder()
-                            .model(model.modelId)
-                            .dimensions(dimensions)
-                            .build()
-                    )
-                )
-            }
-        }.fold(
-            onSuccess = { response ->
-                val results = response.results
-                if (results.size != texts.size) {
-                    throw LlmApiException(
-                        statusCode = null,
-                        errorBody = null,
-                        message = "Expected ${texts.size} embeddings but got ${results.size}"
-                    )
-                }
-                results.map { it.output }
-            },
-            onFailure = { e ->
-                when (e) {
-                    is AiCoreException -> throw e
-                    is TimeoutCancellationException -> throw LlmTimeoutException(timeoutMs = 60_000L)
-                    else -> handleException(e)
-                }
-            }
+    ): List<FloatArray> =
+        buildEmbeddingRequest(texts, model, dimensions)
+            .let { callOrThrow(it, BATCH_TIMEOUT_MS) }
+            .let { validateAndExtractOutputs(it, texts.size) }
+
+    // ========== Pure Functions ==========
+
+    private fun buildEmbeddingRequest(texts: List<String>, model: EmbeddingModel, dimensions: Int): EmbeddingRequest =
+        EmbeddingRequest(
+            texts,
+            OpenAiEmbeddingOptions.builder()
+                .model(model.modelId)
+                .dimensions(dimensions)
+                .build()
         )
+
+    private fun extractSingleOutput(response: EmbeddingResponse): FloatArray =
+        response.results.firstOrNull()?.output
+            ?: throw LlmApiException(
+                statusCode = null,
+                errorBody = null,
+                message = "No embedding result in response"
+            )
+
+    private fun validateAndExtractOutputs(response: EmbeddingResponse, expectedSize: Int): List<FloatArray> {
+        if (response.results.size != expectedSize) {
+            throw LlmApiException(
+                statusCode = null,
+                errorBody = null,
+                message = "Expected $expectedSize embeddings but got ${response.results.size}"
+            )
+        }
+        return response.results.map { it.output }
     }
 
-    /**
-     * 예외 처리 및 Domain Exception으로 변환
-     */
-    private fun handleException(e: Throwable): Nothing =
-        when {
-            e.message?.let { it.contains("401") || it.contains("Unauthorized") } == true ->
-                throw LlmAuthenticationException(
-                    message = "OpenAI API authentication failed. Please check your API key."
-                )
+    // ========== Side Effect ==========
 
-            e.message?.let { it.contains("429") || it.contains("rate limit") } == true ->
-                throw LlmRateLimitException(
-                    retryAfterSeconds = null,
-                    message = "OpenAI API rate limit exceeded"
-                )
-
-            else ->
-                throw LlmApiException(
-                    statusCode = null,
-                    errorBody = e.message,
-                    message = "OpenAI Embedding API error: ${e.message}",
-                    cause = e
-                )
+    private suspend fun callOrThrow(request: EmbeddingRequest, timeoutMs: Long): EmbeddingResponse =
+        withContext(Dispatchers.IO) {
+            runCatching { withTimeout(timeoutMs) { embeddingModel.call(request) } }
+                .getOrElse { mapException(it, timeoutMs) }
         }
+
+    private fun mapException(e: Throwable, timeoutMs: Long): Nothing =
+        when (e) {
+            is AiCoreException -> throw e
+            is TimeoutCancellationException -> throw LlmTimeoutException(timeoutMs = timeoutMs)
+            else -> throwMappedException(e)
+        }
+
+    private fun throwMappedException(e: Throwable): Nothing {
+        val message = e.message.orEmpty()
+        when {
+            message.containsAny("401", "Unauthorized") -> throwAuthenticationException()
+            message.containsAny("429", "rate limit") -> throwRateLimitException()
+            else -> throwApiException(e)
+        }
+    }
+
+    private fun throwAuthenticationException(): Nothing =
+        throw LlmAuthenticationException(
+            message = "OpenAI API authentication failed. Please check your API key."
+        )
+
+    private fun throwRateLimitException(): Nothing =
+        throw LlmRateLimitException(
+            retryAfterSeconds = null,
+            message = "OpenAI API rate limit exceeded"
+        )
+
+    private fun throwApiException(e: Throwable): Nothing =
+        throw LlmApiException(
+            statusCode = null,
+            errorBody = e.message,
+            message = "OpenAI Embedding API error: ${e.message}",
+            cause = e
+        )
+
+    private fun String.containsAny(vararg terms: String): Boolean =
+        terms.any { contains(it) }
 }
