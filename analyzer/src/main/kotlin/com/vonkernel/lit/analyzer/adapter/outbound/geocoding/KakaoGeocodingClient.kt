@@ -5,16 +5,11 @@ import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoAddressD
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoAddressResponse
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordDocument
 import com.vonkernel.lit.analyzer.adapter.outbound.geocoding.model.KakaoKeywordResponse
-import com.vonkernel.lit.analyzer.domain.port.geocoding.Geocoder
 import com.vonkernel.lit.core.entity.Address
 import com.vonkernel.lit.core.entity.Coordinate
 import com.vonkernel.lit.core.entity.Location
 import com.vonkernel.lit.core.entity.RegionType
-import com.vonkernel.lit.persistence.jpa.JpaAddressRepository
-import com.vonkernel.lit.persistence.jpa.mapper.LocationMapper
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.reactor.awaitSingleOrNull
-import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
@@ -22,42 +17,32 @@ import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.bodyToMono
 
 @Component
-class KakaoGeocodingAdapter(
-    @param:Qualifier("kakaoWebClient") private val webClient: WebClient,
-    private val jpaAddressRepository: JpaAddressRepository
-) : Geocoder {
+class KakaoGeocodingClient(
+    @param:Qualifier("kakaoWebClient") private val webClient: WebClient
+) : GeocodingClient {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     override suspend fun geocodeByAddress(query: String): List<Location> =
-        findCached(query)?.let { listOf(it) }
-            ?: searchAddress(query)?.let { mapToLocations(it, query) }
+        searchAddress(query)?.let { mapToLocations(it, query) }
             ?: searchAddressBroader(query)
 
     override suspend fun geocodeByKeyword(query: String): List<Location> =
-        findCached(query)?.let { listOf(it) }
-            ?: (searchKeyword(query)?.let { keywordDoc ->
-                keywordDoc.addressName
-                    ?.let { searchAddress(it) }
-                    ?.let { mapToLocations(it, query) }
-                    ?: listOf(locationFromCoordinate(keywordDoc.x, keywordDoc.y, query))
-            } ?: emptyList())
+        searchKeyword(query)?.let { keywordDoc ->
+            keywordDoc.addressName
+                ?.let { searchAddress(it) }
+                ?.let { mapToLocations(it, query) }
+                ?: listOf(locationFromCoordinate(keywordDoc.x, keywordDoc.y, query))
+        } ?: emptyList()
 
-    private suspend fun findCached(query: String): Location? =
-        withContext(Dispatchers.IO) {
-            jpaAddressRepository.findFirstByAddressName(query)
-        }?.also {
-            log.debug("Address cache hit for: {}", query)
-        }?.let(LocationMapper::toDomainModel)
-
-    private suspend fun searchAddressBroader(query: String): List<Location> {
-        val parts = query.split(" ")
-        if (parts.size < 2) return emptyList()
-
-        val broader = parts.dropLast(1).joinToString(" ")
-        log.debug("Address search fallback: '{}' -> '{}'", query, broader)
-        return searchAddress(broader)?.let { mapToLocations(it, query) } ?: emptyList()
-    }
+    private suspend fun searchAddressBroader(query: String): List<Location> =
+        query.split(" ")
+            .takeIf { it.size >= 2 }
+            ?.dropLast(1)
+            ?.joinToString(" ")
+            ?.also { log.debug("Address search fallback: '{}' -> '{}'", query, it) }
+            ?.let { searchAddress(it)?.let { doc -> mapToLocations(doc, query) } }
+            ?: emptyList()
 
     private suspend fun searchAddress(query: String): KakaoAddressDocument? =
         webClient.get()
