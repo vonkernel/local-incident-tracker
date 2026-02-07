@@ -32,7 +32,7 @@ class DebeziumOutboxEventTest {
     """.trimIndent()
 
     @Test
-    fun `deserializes Debezium envelope correctly`() {
+    fun `Debezium envelope를 올바르게 역직렬화한다`() {
         val envelope = objectMapper.readValue(cdcEventJson, DebeziumOutboxEnvelope::class.java)
 
         assertEquals("c", envelope.op)
@@ -44,7 +44,7 @@ class DebeziumOutboxEventTest {
     }
 
     @Test
-    fun `deserializes OutboxPayload with payload JSON string`() {
+    fun `payload JSON 문자열로 OutboxPayload를 역직렬화한다`() {
         val envelope = objectMapper.readValue(cdcEventJson, DebeziumOutboxEnvelope::class.java)
         val payload = envelope.after!!
 
@@ -54,10 +54,11 @@ class DebeziumOutboxEventTest {
     }
 
     @Test
-    fun `toAnalysisResult performs double deserialization`() {
+    fun `toAnalysisResult는 이중 역직렬화를 수행한다`() {
         val envelope = objectMapper.readValue(cdcEventJson, DebeziumOutboxEnvelope::class.java)
-        val analysisResult = envelope.after!!.toAnalysisResult(objectMapper)
+        val (analyzedAt, analysisResult) = envelope.after!!.toAnalysisResult(objectMapper)
 
+        assertEquals(Instant.parse("2026-01-30T08:33:30.855654Z"), analyzedAt)
         assertEquals("2026-01-30-4903", analysisResult.articleId)
         assertEquals("경부선 열차사고 재판", analysisResult.refinedArticle.title)
         assertEquals("30일 대구지법에서 재판이 열렸다.", analysisResult.refinedArticle.content)
@@ -74,7 +75,7 @@ class DebeziumOutboxEventTest {
     }
 
     @Test
-    fun `ignores unknown fields in envelope`() {
+    fun `envelope의 알 수 없는 필드를 무시한다`() {
         // ts_ms is an unknown field in our model, should be silently ignored
         val envelope = objectMapper.readValue(cdcEventJson, DebeziumOutboxEnvelope::class.java)
 

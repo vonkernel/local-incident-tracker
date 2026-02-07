@@ -83,57 +83,63 @@ class OpenAiPromptExecutor(
             }
             .build()
 
-    /**
-     * Spring AI ChatResponse를 Domain PromptExecutionResult로 변환
-     */
     private fun <I, O> parseResponse(
         prompt: Prompt<I, O>,
         response: ChatResponse
     ): PromptExecutionResult<O> =
-        response.results.firstOrNull()
-            ?.let { generation ->
-                generation.output.text
-                    ?.let { content ->
-                        runCatching { objectMapper.readValue(content, prompt.outputType) }
-                            .getOrElse { e ->
-                                throw ResponseParsingException(
-                                    promptId = prompt.id,
-                                    responseContent = content,
-                                    targetType = prompt.outputType.simpleName,
-                                    message = e.message ?: "JSON parsing failed",
-                                    cause = e
-                                )
-                            }
-                            .let { parsedResult ->
-                                PromptExecutionResult(
-                                    result = parsedResult,
-                                    metadata = ExecutionMetadata(
-                                        model = prompt.model.modelId,
-                                        tokenUsage = response.metadata?.usage.let { usage ->
-                                            TokenUsage(
-                                                promptTokens = usage?.promptTokens ?: 0,
-                                                completionTokens = usage?.completionTokens ?: 0,
-                                                totalTokens = usage?.totalTokens ?: 0
-                                            )
-                                        },
-                                        finishReason = generation.metadata?.finishReason
-                                    )
-                                )
-                            }
-                    }
-                    ?: throw ResponseParsingException(
-                        promptId = prompt.id,
-                        responseContent = "",
-                        targetType = prompt.outputType.simpleName,
-                        message = "AssistantMessage text content is null"
-                    )
+        extractGenerationOrThrow(response, prompt)
+            .let { generation ->
+                PromptExecutionResult(
+                    result = extractContentOrThrow(generation, prompt).let { parseJsonOrThrow(it, prompt) },
+                    metadata = buildExecutionMetadata(response, generation, prompt)
+                )
             }
+
+    private fun <I, O> extractGenerationOrThrow(response: ChatResponse, prompt: Prompt<I, O>) =
+        response.results.firstOrNull()
             ?: throw ResponseParsingException(
                 promptId = prompt.id,
                 responseContent = "",
                 targetType = prompt.outputType.simpleName,
                 message = "No generation result in ChatResponse"
             )
+
+    private fun <I, O> extractContentOrThrow(generation: org.springframework.ai.chat.model.Generation, prompt: Prompt<I, O>) =
+        generation.output.text
+            ?: throw ResponseParsingException(
+                promptId = prompt.id,
+                responseContent = "",
+                targetType = prompt.outputType.simpleName,
+                message = "AssistantMessage text content is null"
+            )
+
+    private fun <I, O> parseJsonOrThrow(content: String, prompt: Prompt<I, O>): O =
+        runCatching { objectMapper.readValue(content, prompt.outputType) }
+            .getOrElse { e ->
+                throw ResponseParsingException(
+                    promptId = prompt.id,
+                    responseContent = content,
+                    targetType = prompt.outputType.simpleName,
+                    message = e.message ?: "JSON parsing failed",
+                    cause = e
+                )
+            }
+
+    private fun <I, O> buildExecutionMetadata(
+        response: ChatResponse,
+        generation: org.springframework.ai.chat.model.Generation,
+        prompt: Prompt<I, O>
+    ) = ExecutionMetadata(
+        model = prompt.model.modelId,
+        tokenUsage = response.metadata?.usage.let { usage ->
+            TokenUsage(
+                promptTokens = usage?.promptTokens ?: 0,
+                completionTokens = usage?.completionTokens ?: 0,
+                totalTokens = usage?.totalTokens ?: 0
+            )
+        },
+        finishReason = generation.metadata?.finishReason
+    )
 
     /**
      * 예외 처리 및 Domain Exception으로 변환

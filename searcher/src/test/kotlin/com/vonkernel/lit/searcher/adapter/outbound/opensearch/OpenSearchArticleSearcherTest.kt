@@ -25,7 +25,7 @@ class OpenSearchArticleSearcherTest {
     private val mapper = ObjectMapper()
 
     @Test
-    fun `search delegates to OpenSearch client and maps result`() = runTest {
+    fun `search는 OpenSearch 클라이언트에 위임하고 결과를 매핑한다`() = runTest {
         val criteria = SearchCriteria(sortBy = SortType.DATE)
 
         val total = mockk<TotalHits>()
@@ -50,7 +50,7 @@ class OpenSearchArticleSearcherTest {
     }
 
     @Test
-    fun `search passes query embedding through to query builder`() = runTest {
+    fun `search는 쿼리 임베딩을 쿼리 빌더에 전달한다`() = runTest {
         val criteria = SearchCriteria(query = "화재", semanticSearch = true, sortBy = SortType.RELEVANCE)
         val embedding = ByteArray(512) { 0 }
 

@@ -24,9 +24,12 @@ class EmbeddingAdapter(
 
     override suspend fun embedAll(texts: List<String>): List<ByteArray?> =
         texts.takeIf { it.isNotEmpty() }
-            ?.let { runCatching { findExecutor().embedAll(it, MODEL, DIMENSIONS).map { floats -> floats.toByteArray() } } }
-            ?.getOrElse { List(texts.size) { null } }
+            ?.let { executeEmbedAllOrNulls(it) }
             ?: emptyList()
+
+    private suspend fun executeEmbedAllOrNulls(texts: List<String>): List<ByteArray?> =
+        runCatching { findExecutor().embedAll(texts, MODEL, DIMENSIONS).map { it.toByteArray() } }
+            .getOrElse { List(texts.size) { null } }
 
     private fun findExecutor() = embeddingExecutors.first { it.supports(MODEL.provider) }
 

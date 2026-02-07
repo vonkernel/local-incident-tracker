@@ -6,11 +6,14 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.vonkernel.lit.indexer.domain.port.DlqPublisher
 import com.vonkernel.lit.indexer.domain.service.ArticleIndexingService
 import io.mockk.*
+import kotlinx.coroutines.test.runTest
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
 import org.apache.kafka.common.header.internals.RecordHeaders
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 class DlqEventListenerTest {
 
@@ -47,35 +50,41 @@ class DlqEventListenerTest {
 
     @BeforeEach
     fun setUp() {
-        listener = DlqEventListener(articleIndexingService, dlqPublisher, objectMapper, maxRetries)
+        listener = DlqEventListener(
+            articleIndexingService, dlqPublisher, objectMapper,
+            maxRetries = maxRetries, baseDelayMs = 10L, backoffFactor = 2.0
+        )
     }
 
     @Test
-    fun `successfully re-indexes DLQ event`() {
-        coEvery { articleIndexingService.index(any()) } just Runs
+    fun `DLQ 이벤트 재인덱싱 성공`() {
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
         val record = createRecordWithRetryCount(validPayload, 0)
 
         listener.onDlqEvent(record)
 
         coVerify(exactly = 1) {
-            articleIndexingService.index(match { it.articleId == "2026-01-30-001" })
+            articleIndexingService.index(
+                match { it.articleId == "2026-01-30-001" },
+                eq(Instant.parse("2026-01-30T08:33:30Z"))
+            )
         }
         coVerify(exactly = 0) { dlqPublisher.publish(any(), any(), any()) }
     }
 
     @Test
-    fun `discards event when max retries exceeded`() {
+    fun `최대 재시도 초과 시 이벤트 폐기`() {
         val record = createRecordWithRetryCount(validPayload, 3)
 
         listener.onDlqEvent(record)
 
-        coVerify(exactly = 0) { articleIndexingService.index(any()) }
+        coVerify(exactly = 0) { articleIndexingService.index(any(), any()) }
         coVerify(exactly = 0) { dlqPublisher.publish(any(), any(), any()) }
     }
 
     @Test
-    fun `re-publishes to DLQ with incremented retry count on failure`() {
-        coEvery { articleIndexingService.index(any()) } throws RuntimeException("Indexing failed")
+    fun `실패 시 재시도 횟수 증가하여 DLQ에 재발행`() {
+        coEvery { articleIndexingService.index(any(), any()) } throws RuntimeException("Indexing failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } just Runs
         val record = createRecordWithRetryCount(validPayload, 1)
 
@@ -87,35 +96,57 @@ class DlqEventListenerTest {
     }
 
     @Test
-    fun `ignores non-create events`() {
+    fun `CREATE가 아닌 이벤트는 무시한다`() {
         val record = createRecordWithRetryCount(updatePayload, 0)
 
         listener.onDlqEvent(record)
 
-        coVerify(exactly = 0) { articleIndexingService.index(any()) }
+        coVerify(exactly = 0) { articleIndexingService.index(any(), any()) }
         coVerify(exactly = 0) { dlqPublisher.publish(any(), any(), any()) }
     }
 
     @Test
-    fun `treats missing retry header as zero`() {
-        coEvery { articleIndexingService.index(any()) } just Runs
+    fun `재시도 헤더 누락 시 0으로 처리`() {
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
         val record = ConsumerRecord("topic", 0, 0L, "key", validPayload)
 
         listener.onDlqEvent(record)
 
-        coVerify(exactly = 1) { articleIndexingService.index(any()) }
+        coVerify(exactly = 1) { articleIndexingService.index(any(), any()) }
     }
 
     @Test
-    fun `handles DLQ re-publish failure gracefully`() {
-        coEvery { articleIndexingService.index(any()) } throws RuntimeException("Indexing failed")
+    fun `DLQ 재발행 실패 시 오프셋 커밋 방지를 위해 예외 발생`() {
+        coEvery { articleIndexingService.index(any(), any()) } throws RuntimeException("Indexing failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } throws RuntimeException("DLQ publish failed")
         val record = createRecordWithRetryCount(validPayload, 0)
 
-        // Should not throw
-        listener.onDlqEvent(record)
+        assertThrows(RuntimeException::class.java) {
+            listener.onDlqEvent(record)
+        }
 
         coVerify(exactly = 1) { dlqPublisher.publish(validPayload, 1, "2026-01-30-001") }
+    }
+
+    @Test
+    fun `재시도 횟수가 0보다 크면 백오프 지연 적용`() = runTest {
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
+        val record = createRecordWithRetryCount(validPayload, 2)
+
+        listener.onDlqEvent(record)
+
+        // With baseDelay=10ms and factor=2.0, retryCount=2 → delay = 10 * 2^(2-1) = 20ms
+        coVerify(exactly = 1) { articleIndexingService.index(any(), any()) }
+    }
+
+    @Test
+    fun `재시도 횟수가 0이면 백오프 지연 없음`() {
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
+        val record = createRecordWithRetryCount(validPayload, 0)
+
+        listener.onDlqEvent(record)
+
+        coVerify(exactly = 1) { articleIndexingService.index(any(), any()) }
     }
 
     private fun createRecordWithRetryCount(value: String, retryCount: Int): ConsumerRecord<String, String> {

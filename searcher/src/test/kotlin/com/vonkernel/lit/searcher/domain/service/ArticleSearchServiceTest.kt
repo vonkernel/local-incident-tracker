@@ -23,7 +23,7 @@ class ArticleSearchServiceTest {
     private val emptyResult = SearchResult(items = emptyList(), totalHits = 0, page = 0, size = 20)
 
     @Test
-    fun `full-text search executes without embedding`() = runTest {
+    fun `전문 검색은 임베딩 없이 실행한다`() = runTest {
         val criteria = SearchCriteria(query = "화재", sortBy = SortType.RELEVANCE)
         coEvery { articleSearcher.search(criteria, null) } returns emptyResult
 
@@ -35,7 +35,7 @@ class ArticleSearchServiceTest {
     }
 
     @Test
-    fun `semantic search generates embedding and passes to searcher`() = runTest {
+    fun `시맨틱 검색은 임베딩을 생성하여 검색기에 전달한다`() = runTest {
         val criteria = SearchCriteria(query = "서울 폭우", semanticSearch = true, sortBy = SortType.RELEVANCE)
         val embedding = ByteArray(512) { 0 }
         coEvery { embedder.embed("서울 폭우") } returns embedding
@@ -49,7 +49,7 @@ class ArticleSearchServiceTest {
     }
 
     @Test
-    fun `semantic search falls back to full-text when embedding fails`() = runTest {
+    fun `시맨틱 검색은 임베딩 실패 시 전문 검색으로 폴백한다`() = runTest {
         val criteria = SearchCriteria(query = "산불", semanticSearch = true, sortBy = SortType.RELEVANCE)
         coEvery { embedder.embed("산불") } throws RuntimeException("API error")
         coEvery { articleSearcher.search(criteria, null) } returns emptyResult
@@ -61,21 +61,21 @@ class ArticleSearchServiceTest {
     }
 
     @Test
-    fun `RELEVANCE sort without query throws exception`() = runTest {
+    fun `RELEVANCE 정렬에 쿼리 없으면 예외 발생`() = runTest {
         val criteria = SearchCriteria(sortBy = SortType.RELEVANCE)
 
         assertThrows<ArticleSearchException> { service.search(criteria) }
     }
 
     @Test
-    fun `DISTANCE sort without proximity throws exception`() = runTest {
+    fun `DISTANCE 정렬에 proximity 없으면 예외 발생`() = runTest {
         val criteria = SearchCriteria(query = "화재", sortBy = SortType.DISTANCE)
 
         assertThrows<ArticleSearchException> { service.search(criteria) }
     }
 
     @Test
-    fun `search failure propagates as ArticleSearchException`() = runTest {
+    fun `검색 실패 시 ArticleSearchException으로 전파`() = runTest {
         val criteria = SearchCriteria(sortBy = SortType.DATE)
         coEvery { articleSearcher.search(criteria, null) } throws RuntimeException("connection refused")
 
@@ -83,7 +83,7 @@ class ArticleSearchServiceTest {
     }
 
     @Test
-    fun `DATE sort without query skips embedding`() = runTest {
+    fun `DATE 정렬에 쿼리 없으면 임베딩 건너뜀`() = runTest {
         val criteria = SearchCriteria(sortBy = SortType.DATE)
         coEvery { articleSearcher.search(criteria, null) } returns emptyResult
 
@@ -94,7 +94,7 @@ class ArticleSearchServiceTest {
     }
 
     @Test
-    fun `semantic search with blank query does not call embedder`() = runTest {
+    fun `시맨틱 검색에 빈 쿼리면 임베더 호출하지 않음`() = runTest {
         val criteria = SearchCriteria(query = "  ", semanticSearch = true, sortBy = SortType.DATE)
         coEvery { articleSearcher.search(criteria, null) } returns emptyResult
 

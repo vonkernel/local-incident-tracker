@@ -74,10 +74,10 @@ object TestFixtures {
         articleId: String = "test-article-1",
         refinedArticle: RefinedArticle = createRefinedArticle(),
         incidentTypes: Set<IncidentType> = setOf(
-            IncidentType("fire", "산불"),
-            IncidentType("typhoon", "태풍")
+            IncidentType("FOREST_FIRE", "산불"),
+            IncidentType("TYPHOON", "태풍")
         ),
-        urgency: Urgency = Urgency("HIGH", 3),
+        urgency: Urgency = Urgency("긴급", 9),
         keywords: List<Keyword> = listOf(
             Keyword("화재", 10),
             Keyword("대피", 8)
@@ -135,19 +135,19 @@ object TestFixtures {
     ) = Location(coordinate, address)
 
     // ===== Urgency (Domain Model) =====
-    fun createUrgency(name: String = "HIGH", level: Int = 3) = Urgency(name, level)
+    fun createUrgency(name: String = "긴급", level: Int = 9) = Urgency(name, level)
 
     // ===== UrgencyTypeEntity (Persistence Model) =====
-    fun createUrgencyEntity(name: String = "HIGH", level: Int = 3) = UrgencyTypeEntity(
+    fun createUrgencyEntity(name: String = "긴급", level: Int = 9) = UrgencyTypeEntity(
         name = name,
         level = level
     )
 
     // ===== IncidentType (Domain Model) =====
-    fun createIncidentType(code: String = "fire", name: String = "산불") = IncidentType(code, name)
+    fun createIncidentType(code: String = "FOREST_FIRE", name: String = "산불") = IncidentType(code, name)
 
     // ===== IncidentTypeEntity (Persistence Model) =====
-    fun createIncidentTypeEntity(code: String = "fire", name: String = "산불") = IncidentTypeEntity(
+    fun createIncidentTypeEntity(code: String = "FOREST_FIRE", name: String = "산불") = IncidentTypeEntity(
         code = code,
         name = name
     )

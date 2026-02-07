@@ -24,7 +24,7 @@ class ArticleSearchControllerTest {
     private val globalExceptionHandler = GlobalExceptionHandler()
 
     @Test
-    fun `search returns 200 with results`() {
+    fun `search는 결과와 함께 200을 반환한다`() {
         val result = SearchResult(
             items = listOf(
                 SearchResultItem(
@@ -47,7 +47,7 @@ class ArticleSearchControllerTest {
     }
 
     @Test
-    fun `search maps parameters correctly`() {
+    fun `search는 파라미터를 올바르게 매핑한다`() {
         coEvery { articleSearchService.search(any()) } returns SearchResult(
             items = emptyList(), totalHits = 0, page = 0, size = 10,
         )
@@ -73,7 +73,7 @@ class ArticleSearchControllerTest {
     // --- SearchRequest 유효성 검증 ---
 
     @Test
-    fun `partial proximity fields throws InvalidSearchRequestException`() {
+    fun `불완전한 proximity 필드는 InvalidSearchRequestException을 발생시킨다`() {
         val request = SearchRequest(latitude = 37.5, longitude = 126.9)
 
         val exception = assertThrows<InvalidSearchRequestException> { request.toCriteria() }
@@ -81,21 +81,21 @@ class ArticleSearchControllerTest {
     }
 
     @Test
-    fun `negative distanceKm throws InvalidSearchRequestException`() {
+    fun `음수 distanceKm은 InvalidSearchRequestException을 발생시킨다`() {
         val request = SearchRequest(latitude = 37.5, longitude = 126.9, distanceKm = -1.0)
 
         assertThrows<InvalidSearchRequestException> { request.toCriteria() }
     }
 
     @Test
-    fun `negative page throws InvalidSearchRequestException`() {
+    fun `음수 page는 InvalidSearchRequestException을 발생시킨다`() {
         val request = SearchRequest(page = -1)
 
         assertThrows<InvalidSearchRequestException> { request.toCriteria() }
     }
 
     @Test
-    fun `size exceeding 100 throws InvalidSearchRequestException`() {
+    fun `100 초과 size는 InvalidSearchRequestException을 발생시킨다`() {
         val request = SearchRequest(size = 101)
 
         assertThrows<InvalidSearchRequestException> { request.toCriteria() }
@@ -104,7 +104,7 @@ class ArticleSearchControllerTest {
     // --- GlobalExceptionHandler ---
 
     @Test
-    fun `GlobalExceptionHandler handles InvalidSearchRequestException as 400`() {
+    fun `GlobalExceptionHandler는 InvalidSearchRequestException을 400으로 처리한다`() {
         val exception = InvalidSearchRequestException("proximity 필터에는 latitude, longitude, distanceKm이 모두 필요합니다.")
 
         val response = globalExceptionHandler.handleInvalidSearchRequest(exception)
@@ -114,7 +114,7 @@ class ArticleSearchControllerTest {
     }
 
     @Test
-    fun `GlobalExceptionHandler handles ArticleSearchException as 500`() {
+    fun `GlobalExceptionHandler는 ArticleSearchException을 500으로 처리한다`() {
         val exception = ArticleSearchException("Search execution failed")
 
         val response = globalExceptionHandler.handleArticleSearchException(exception)
@@ -124,7 +124,7 @@ class ArticleSearchControllerTest {
     }
 
     @Test
-    fun `GlobalExceptionHandler handles unexpected Exception as 500`() {
+    fun `GlobalExceptionHandler는 예상치 못한 Exception을 500으로 처리한다`() {
         val exception = RuntimeException("unexpected")
 
         val response = globalExceptionHandler.handleUnexpectedException(exception)
@@ -136,7 +136,7 @@ class ArticleSearchControllerTest {
     // --- SearchRequest → SearchCriteria 변환 ---
 
     @Test
-    fun `SearchRequest toCriteria converts correctly`() {
+    fun `SearchRequest의 toCriteria가 올바르게 변환한다`() {
         val request = SearchRequest(
             query = "화재",
             semanticSearch = true,

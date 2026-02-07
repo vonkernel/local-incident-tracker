@@ -20,26 +20,31 @@ suspend fun <T> executeWithRetry(
     backoffFactor: Double = 2.0,
     onRetry: suspend (attempt: Int, nextDelay: Long, exception: Throwable) -> Unit = { _, _, _ -> },
     block: suspend () -> T
-): T {
-    var currentAttempt = 0
-    while (true) {
-        try {
-            return block()
-        } catch (e: Exception) {
-            currentAttempt++
+): T = retryImpl(
+    attempt = 1,
+    maxRetries = maxRetries,
+    baseDelayMs = baseDelayMs,
+    backoffFactor = backoffFactor,
+    onRetry = onRetry,
+    block = block
+)
 
-            // 재시도 횟수 초과 시 예외를 그대로 전파 (또는 커스텀 예외로 래핑 가능)
-            if (currentAttempt > maxRetries) {
-                throw MaxRetriesExceededException("Failed to fetch page after $maxRetries attempts", e)
-            }
-
-            // 백오프 시간 계산
-            val nextDelay = (baseDelayMs * backoffFactor.pow(currentAttempt - 1)).toLong()
-
-            // [커뮤니케이션] 호출자에게 재시도 상황 알림 (로깅 등은 여기서 수행됨)
-            onRetry(currentAttempt, nextDelay, e)
-
-            delay(nextDelay)
+private suspend fun <T> retryImpl(
+    attempt: Int,
+    maxRetries: Int,
+    baseDelayMs: Long,
+    backoffFactor: Double,
+    onRetry: suspend (Int, Long, Throwable) -> Unit,
+    block: suspend () -> T
+): T =
+    try {
+        block()
+    } catch (e: Exception) {
+        if (attempt > maxRetries) {
+            throw MaxRetriesExceededException("Failed after $maxRetries attempts", e)
         }
+        val nextDelay = (baseDelayMs * backoffFactor.pow(attempt - 1)).toLong()
+        onRetry(attempt, nextDelay, e)
+        delay(nextDelay)
+        retryImpl(attempt + 1, maxRetries, baseDelayMs, backoffFactor, onRetry, block)
     }
-}

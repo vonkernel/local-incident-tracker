@@ -26,6 +26,8 @@ kafka:
     group-id: ${KAFKA_CONSUMER_GROUP_ID:indexer-group}
   dlq:
     max-retries: ${DLQ_MAX_RETRIES:3}
+    base-delay-ms: ${DLQ_BASE_DELAY_MS:2000}
+    backoff-factor: ${DLQ_BACKOFF_FACTOR:2.0}
     consumer:
       group-id: ${DLQ_CONSUMER_GROUP_ID:indexer-dlq-group}
 
@@ -33,3 +35,8 @@ opensearch:
   host: ${OPENSEARCH_HOST:localhost}
   port: ${OPENSEARCH_PORT:9200}
   index-name: ${OPENSEARCH_INDEX_NAME:articles}
+
+indexing:
+  retry:
+    max-retries: ${INDEXING_RETRY_MAX_RETRIES:2}
+    base-delay-ms: ${INDEXING_RETRY_BASE_DELAY_MS:1000}

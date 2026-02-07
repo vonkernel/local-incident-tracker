@@ -1,6 +1,5 @@
 package com.vonkernel.lit.persistence.adapter
 
-import com.vonkernel.lit.persistence.jpa.entity.article.IncidentTypeEntity
 import com.vonkernel.lit.persistence.jpa.JpaIncidentTypeRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -25,26 +24,25 @@ class IncidentTypeRepositoryAdapterTest {
     private lateinit var jpaRepository: JpaIncidentTypeRepository
 
     @Test
-    @DisplayName("findAll: 저장된 모든 사건 유형을 도메인 모델로 반환한다")
+    @DisplayName("findAll: schema-h2.sql에서 INSERT된 모든 사건 유형을 도메인 모델로 반환한다")
     fun findAll_returnsAllIncidentTypes() {
-        jpaRepository.saveAll(listOf(
-            IncidentTypeEntity(code = "forest_fire", name = "산불"),
-            IncidentTypeEntity(code = "typhoon", name = "태풍"),
-            IncidentTypeEntity(code = "earthquake", name = "지진")
-        ))
-
         val result = adapter.findAll()
 
-        assertThat(result).hasSize(3)
-        assertThat(result.map { it.code }).containsExactlyInAnyOrder("forest_fire", "typhoon", "earthquake")
-        assertThat(result.map { it.name }).containsExactlyInAnyOrder("산불", "태풍", "지진")
+        assertThat(result).hasSize(37)
+        assertThat(result.map { it.code }).contains("FOREST_FIRE", "TYPHOON", "EARTHQUAKE", "FLOOD")
+        assertThat(result.map { it.name }).contains("산불", "태풍", "지진", "홍수")
     }
 
     @Test
-    @DisplayName("findAll: 데이터가 없으면 빈 리스트를 반환한다")
-    fun findAll_returnsEmptyListWhenNoData() {
+    @DisplayName("findAll: 각 사건 유형의 code-name 매핑이 정확하다")
+    fun findAll_correctCodeNameMapping() {
         val result = adapter.findAll()
 
-        assertThat(result).isEmpty()
+        val nameByCode = result.associate { it.code to it.name }
+        assertThat(nameByCode["FOREST_FIRE"]).isEqualTo("산불")
+        assertThat(nameByCode["TYPHOON"]).isEqualTo("태풍")
+        assertThat(nameByCode["EARTHQUAKE"]).isEqualTo("지진")
+        assertThat(nameByCode["FLOOD"]).isEqualTo("홍수")
+        assertThat(nameByCode["HEAVY_SNOW"]).isEqualTo("대설")
     }
 }

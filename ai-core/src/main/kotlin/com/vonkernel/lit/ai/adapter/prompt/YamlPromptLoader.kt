@@ -10,6 +10,7 @@ import com.vonkernel.lit.ai.domain.model.LlmModel
 import com.vonkernel.lit.ai.domain.model.Prompt
 import com.vonkernel.lit.ai.domain.model.PromptParameters
 import com.vonkernel.lit.ai.domain.port.PromptLoader
+import org.springframework.core.io.Resource
 import org.springframework.core.io.ResourceLoader
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
@@ -45,22 +46,15 @@ class YamlPromptLoader(
      */
     private val promptCache = ConcurrentHashMap<String, Prompt<*, *>>()
 
+    @Suppress("UNCHECKED_CAST")
     override fun <I, O> load(
         promptId: String,
         inputType: Class<I>,
         outputType: Class<O>
-    ): Prompt<I, O> {
-        // 캐시 키 생성 (promptId + 타입 정보)
-        val cacheKey = buildCacheKey(promptId, inputType, outputType)
-
-        // 캐시에서 조회, 없으면 로드
-        @Suppress("UNCHECKED_CAST")
-        val cachedPrompt = promptCache.computeIfAbsent(cacheKey) {
+    ): Prompt<I, O> =
+        promptCache.computeIfAbsent(buildCacheKey(promptId, inputType, outputType)) {
             loadFromYaml(promptId, inputType, outputType)
         } as Prompt<I, O>
-
-        return cachedPrompt
-    }
 
     /**
      * 전체 프롬프트 캐시 초기화
@@ -93,73 +87,64 @@ class YamlPromptLoader(
      */
     fun getCacheSize(): Int = promptCache.size
 
-    /**
-     * 캐시 키 생성
-     *
-     * promptId와 제네릭 타입 정보를 조합하여 유니크한 키 생성
-     * 동일한 promptId라도 inputType/outputType이 다르면 다른 Prompt 객체
-     */
-    private fun buildCacheKey(
-        promptId: String,
-        inputType: Class<*>,
-        outputType: Class<*>
-    ): String {
-        return "$promptId-${inputType.name}-${outputType.name}"
-    }
+    private fun buildCacheKey(promptId: String, inputType: Class<*>, outputType: Class<*>): String =
+        "$promptId-${inputType.name}-${outputType.name}"
 
-    /**
-     * YAML 파일에서 프롬프트 로드 (캐시 미스 시 호출)
-     */
     private fun <I, O> loadFromYaml(
         promptId: String,
         inputType: Class<I>,
         outputType: Class<O>
     ): Prompt<I, O> =
-        "classpath:prompts/$promptId.yml"
-            .let { yamlPath ->
-                resourceLoader.getResource(yamlPath)
-                    .takeIf { it.exists() }
-                    ?: throw PromptLoadException(promptId, "Prompt file not found at $yamlPath")
-            }
-            .let { resource ->
-                runCatching {
-                    resource.inputStream.use { yamlMapper.readValue<YamlPromptData>(it) }
-                }.getOrElse { e ->
-                    throw PromptParseException(promptId, e.message ?: "Unknown parsing error", e)
-                }
-            }
+        loadResourceOrThrow(promptId)
+            .let { parseYamlOrThrow(it, promptId) }
             .also { validatePromptData(it) }
             .let { convertToDomainModel(it, inputType, outputType) }
 
-    /**
-     * YAML 데이터 검증
-     */
+    private fun loadResourceOrThrow(promptId: String) =
+        "classpath:prompts/$promptId.yml".let { path ->
+            resourceLoader.getResource(path)
+                .takeIf { it.exists() }
+                ?: throw PromptLoadException(promptId, "Prompt file not found at $path")
+        }
+
+    private fun parseYamlOrThrow(resource: Resource, promptId: String): YamlPromptData =
+        runCatching { resource.inputStream.use { yamlMapper.readValue<YamlPromptData>(it) } }
+            .getOrElse { e -> throw PromptParseException(promptId, e.message ?: "Unknown parsing error", e) }
+
     private fun validatePromptData(data: YamlPromptData) {
-        buildList {
-            if (data.id.isBlank()) add("Prompt ID cannot be blank")
-
-            runCatching { LlmModel.valueOf(data.model) }
-                .onFailure { add("Invalid model: ${data.model}. Available models: ${LlmModel.entries.joinToString { it.name }}") }
-
-            if (data.template.isBlank()) add("Template cannot be blank")
-
-            data.parameters?.let { params ->
-                if (params.temperature !in 0f..2f) {
-                    add("Temperature must be between 0.0 and 2.0, got ${params.temperature}")
-                }
-
-                params.topP?.takeIf { it !in 0f..1f }
-                    ?.let { add("TopP must be between 0.0 and 1.0, got $it") }
-
-                params.frequencyPenalty?.takeIf { it !in -2f..2f }
-                    ?.let { add("FrequencyPenalty must be between -2.0 and 2.0, got $it") }
-
-                params.presencePenalty?.takeIf { it !in -2f..2f }
-                    ?.let { add("PresencePenalty must be between -2.0 and 2.0, got $it") }
-            }
-        }.takeIf { it.isNotEmpty() }
-            ?.let { errors -> throw PromptValidationException(data.id, errors) }
+        collectErrors(data)
+            .takeIf { it.isNotEmpty() }
+            ?.let { throw PromptValidationException(data.id, it) }
     }
+
+    private fun collectErrors(data: YamlPromptData): List<String> =
+        validateRequiredFields(data) + validateModel(data.model) + validateParameters(data.parameters)
+
+    private fun validateRequiredFields(data: YamlPromptData): List<String> = listOfNotNull(
+        "Prompt ID cannot be blank".takeIf { data.id.isBlank() },
+        "Template cannot be blank".takeIf { data.template.isBlank() },
+    )
+
+    private fun validateModel(model: String): List<String> =
+        runCatching { LlmModel.valueOf(model) }
+            .fold(
+                onSuccess = { emptyList() },
+                onFailure = { listOf("Invalid model: $model. Available models: ${LlmModel.entries.joinToString { it.name }}") }
+            )
+
+    private fun validateParameters(params: YamlPromptParameters?): List<String> =
+        params?.let {
+            listOfNotNull(
+                validateRange("Temperature", it.temperature, 0f..2f),
+                it.topP?.let { v -> validateRange("TopP", v, 0f..1f) },
+                it.frequencyPenalty?.let { v -> validateRange("FrequencyPenalty", v, -2f..2f) },
+                it.presencePenalty?.let { v -> validateRange("PresencePenalty", v, -2f..2f) },
+            )
+        } ?: emptyList()
+
+    private fun validateRange(name: String, value: Float, range: ClosedFloatingPointRange<Float>): String? =
+        "$name must be between ${range.start} and ${range.endInclusive}, got $value"
+            .takeIf { value !in range }
 
     /**
      * YAML 데이터를 Domain Prompt 객체로 변환

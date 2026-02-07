@@ -1,12 +1,12 @@
-package com.vonkernel.lit.analyzer.domain.service;
+package com.vonkernel.lit.analyzer.domain.service
 
-import com.vonkernel.lit.analyzer.domain.port.analyzer.RefineArticleAnalyzer;
+import com.vonkernel.lit.analyzer.domain.port.analyzer.RefineArticleAnalyzer
 import com.vonkernel.lit.core.entity.Article
 import com.vonkernel.lit.core.entity.RefinedArticle
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Service
 
 @Service
-public class ArticleRefiner(
+class ArticleRefiner(
     private val refineArticleAnalyzer: RefineArticleAnalyzer
 ) : RetryableAnalysisService() {
 

@@ -18,21 +18,20 @@ class ArticleSearchService(
 
     suspend fun search(criteria: SearchCriteria): SearchResult {
         validate(criteria)
-
-        val queryEmbedding = if (criteria.semanticSearch && !criteria.query.isNullOrBlank()) {
-            runCatching { embedder.embed(criteria.query) }
-                .onFailure { log.warn("Query embedding failed, falling back to full-text search: {}", it.message) }
-                .getOrNull()
-        } else {
-            null
-        }
-
-        return runCatching { articleSearcher.search(criteria, queryEmbedding) }
-            .getOrElse { e ->
-                log.error("Search failed: {}", e.message, e)
-                throw ArticleSearchException("Search execution failed", e)
-            }
+        return embedQueryOrNull(criteria).let { searchOrThrow(criteria, it) }
     }
+
+    private suspend fun embedQueryOrNull(criteria: SearchCriteria): ByteArray? {
+        if (!criteria.semanticSearch || criteria.query.isNullOrBlank()) return null
+
+        return runCatching { embedder.embed(criteria.query) }
+            .onFailure { log.warn("Query embedding failed, falling back to full-text search: {}", it.message) }
+            .getOrNull()
+    }
+
+    private suspend fun searchOrThrow(criteria: SearchCriteria, queryEmbedding: ByteArray?): SearchResult =
+        runCatching { articleSearcher.search(criteria, queryEmbedding) }
+            .getOrElse { e -> throw ArticleSearchException("Search execution failed", e) }
 
     private fun validate(criteria: SearchCriteria) {
         if (criteria.sortBy == SortType.RELEVANCE && criteria.query.isNullOrBlank()) {

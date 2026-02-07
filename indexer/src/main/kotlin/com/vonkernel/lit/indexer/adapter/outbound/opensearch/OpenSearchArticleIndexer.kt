@@ -1,15 +1,20 @@
 package com.vonkernel.lit.indexer.adapter.outbound.opensearch
 
 import com.vonkernel.lit.core.entity.ArticleIndexDocument
+import com.vonkernel.lit.indexer.domain.exception.BulkIndexingPartialFailureException
 import com.vonkernel.lit.indexer.domain.port.ArticleIndexer
 import org.opensearch.client.opensearch.OpenSearchClient
 import org.opensearch.client.opensearch.core.BulkRequest
+import org.opensearch.client.opensearch.core.BulkResponse
+import org.opensearch.client.opensearch.core.GetResponse
 import org.opensearch.client.opensearch.core.IndexRequest
+import org.opensearch.client.opensearch.core.bulk.BulkResponseItem
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 @Component
@@ -34,18 +39,53 @@ class OpenSearchArticleIndexer(
         documents.takeIf { it.isNotEmpty() }
             ?.let { buildBulkRequest(it) }
             ?.let { openSearchClient.bulk(it) }
-            ?.also { response ->
-                response.items()
-                    .filter { it.error() != null }
-                    .forEach { log.error("Failed to bulk index document {}: {}", it.id(), it.error()?.reason()) }
-                log.info("Bulk indexed {} documents, errors: {}", documents.size, response.errors())
-            }
+            ?.also { throwOnPartialFailure(it, documents.size) }
     }
 
     private fun buildBulkRequest(documents: List<ArticleIndexDocument>): BulkRequest =
         documents.fold(BulkRequest.Builder()) { builder, doc ->
             builder.operations { op -> op.index { it.index(indexName).id(doc.articleId).document(toMap(doc)) } }
         }.build()
+
+    private fun throwOnPartialFailure(response: BulkResponse, count: Int) {
+        if (!response.errors()) {
+            log.info("Bulk indexed {} documents successfully", count)
+            return
+        }
+
+        response.items()
+            .filter { it.error() != null }
+            .also { logBulkFailures(it) }
+            .mapNotNull { it.id() }
+            .let { failedIds ->
+                throw BulkIndexingPartialFailureException(
+                    failedArticleIds = failedIds,
+                    message = "Bulk indexing partially failed: ${failedIds.size}/$count documents failed, failedIds=$failedIds"
+                )
+            }
+    }
+
+    // 복구 불가능한 부수효과: 실패 건 로깅
+    private fun logBulkFailures(failedItems: List<BulkResponseItem>) {
+        failedItems.forEach { log.error("Failed to bulk index document {}: {}", it.id(), it.error()?.reason()) }
+    }
+
+    override suspend fun findModifiedAtByArticleId(articleId: String): Instant? =
+        getDocumentOrNull(articleId)
+            ?.takeIf { it.found() }
+            ?.source()
+            ?.get("modifiedAt")
+            ?.let { Instant.parse(it as String) }
+
+    private fun getDocumentOrNull(articleId: String): GetResponse<Map<*, *>>? =
+        runCatching {
+            openSearchClient.get(
+                { it.index(indexName).id(articleId).sourceIncludes("modifiedAt") },
+                Map::class.java
+            )
+        }
+            .onFailure { e -> log.warn("Failed to fetch document from OpenSearch: articleId={}, error={}", articleId, e.message) }
+            .getOrNull()
 
     override suspend fun delete(articleId: String) {
         openSearchClient.delete { it.index(indexName).id(articleId) }
@@ -85,8 +125,7 @@ class OpenSearchArticleIndexer(
         put("modifiedAt", document.modifiedAt?.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
     }
 
-    private fun ByteArray.toFloatArray(): List<Float> {
-        return ByteBuffer.wrap(this).order(ByteOrder.BIG_ENDIAN)
-            .let { List(this.size / 4) { it.toFloat() } }
-    }
+    private fun ByteArray.toFloatArray(): List<Float> =
+        ByteBuffer.wrap(this).order(ByteOrder.BIG_ENDIAN)
+            .let { buffer -> List(this.size / 4) { buffer.float } }
 }

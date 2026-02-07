@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.vonkernel.lit.core.entity.AnalysisResult
+import java.time.Instant
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class DebeziumOutboxEnvelope(
@@ -29,5 +30,6 @@ data class DebeziumSource(
     val connector: String? = null
 )
 
-fun OutboxPayload.toAnalysisResult(objectMapper: ObjectMapper): AnalysisResult =
-    objectMapper.readValue(payload, AnalysisResult::class.java)
+fun OutboxPayload.toAnalysisResult(objectMapper: ObjectMapper): Pair<Instant?, AnalysisResult> =
+    createdAt?.let { runCatching { Instant.parse(it) }.getOrNull() } to
+        objectMapper.readValue(payload, AnalysisResult::class.java)

@@ -30,69 +30,74 @@ class DlqEventListener(
         private val CREATE_OPS = setOf("c", "r")
     }
 
+    private data class ParsedDlqEvent(
+        val articleId: String,
+        val article: com.vonkernel.lit.core.entity.Article,
+        val articleUpdatedAt: Instant?,
+    )
+
     @KafkaListener(
         topics = ["\${kafka.topic.article-events-dlq}"],
         groupId = "\${kafka.dlq.consumer.group-id}",
         containerFactory = "dlqKafkaListenerContainerFactory"
     )
     fun onDlqEvent(record: ConsumerRecord<String, String>) {
-        val retryCount = extractRetryCount(record)
-        val rawValue = record.value()
-
-        if (retryCount >= maxRetries) {
-            log.warn("DLQ message exceeded max retries ({}), discarding: offset={}", maxRetries, record.offset())
-            return
-        }
-
-        runBlocking {
-            processRecord(rawValue, retryCount, record.offset())
-        }
+        extractRetryCount(record)
+            .takeIf { it < maxRetries }
+            ?.let { retryCount -> runBlocking { processRecord(record, retryCount) } }
+            ?: log.warn("DLQ message exceeded max retries ({}), discarding: offset={}", maxRetries, record.offset())
     }
 
-    private suspend fun processRecord(rawValue: String, retryCount: Int, offset: Long) {
-        var articleId: String? = null
-
-        runCatching {
-            val envelope = objectMapper.readValue(rawValue, DebeziumEnvelope::class.java)
-                .takeIf { it.op in CREATE_OPS }
-                ?: run {
-                    log.debug("DLQ: Ignoring non-create CDC event, offset={}", offset)
-                    return
-                }
-
-            val payload = envelope.after ?: run {
-                log.warn("DLQ: Create event with null 'after' payload, offset={}", offset)
-                return
-            }
-
-            articleId = payload.articleId
-            val article = payload.toArticle()
-            val eventUpdatedAt = payload.updatedAt?.let { Instant.parse(it) }
-
-            if (isOutdated(articleId, eventUpdatedAt)) {
-                log.info("DLQ: Discarding outdated event for articleId={}, offset={}", articleId, offset)
-                return
-            }
-
-            articleAnalysisService.analyze(article, eventUpdatedAt)
-            log.info("DLQ: Successfully reprocessed articleId={}, retryCount={}", articleId, retryCount)
-        }.onFailure { e ->
-            log.error("DLQ: Failed to reprocess event, offset={}, retryCount={}: {}", offset, retryCount, e.message, e)
-            runCatching {
-                dlqPublisher.publish(rawValue, retryCount + 1, articleId)
-            }.onFailure { publishError ->
-                log.error("DLQ: Failed to re-publish to DLQ, offset={}: {}", offset, publishError.message, publishError)
-            }
-        }
+    private suspend fun processRecord(record: ConsumerRecord<String, String>, retryCount: Int) {
+        parseRecordOrNull(record)
+            ?.takeUnless { isOutdated(it.articleId, it.articleUpdatedAt, record.offset()) }
+            ?.let { analyzeOrRepublish(record, it, retryCount) }
     }
 
-    private fun isOutdated(articleId: String, eventUpdatedAt: Instant?): Boolean {
-        if (eventUpdatedAt == null) return false
+    private suspend fun analyzeOrRepublish(
+        record: ConsumerRecord<String, String>, parsed: ParsedDlqEvent, retryCount: Int
+    ) {
+        runCatching { articleAnalysisService.analyze(parsed.article, parsed.articleUpdatedAt) }
+            .onSuccess { log.info("DLQ: Successfully reprocessed articleId={}, retryCount={}", parsed.articleId, retryCount) }
+            .onFailure { e ->
+                log.error("DLQ: Failed to reprocess event, offset={}, retryCount={}: {}", record.offset(), retryCount, e.message, e)
+                republishToDlqSafely(record, retryCount + 1, parsed.articleId)
+            }
+    }
 
-        val existingUpdatedAt = analysisResultRepository.findArticleUpdatedAtByArticleId(articleId)
-            ?: return false
+    // ========== Parsing ==========
 
-        return eventUpdatedAt.isBefore(existingUpdatedAt)
+    private fun parseRecordOrNull(record: ConsumerRecord<String, String>): ParsedDlqEvent? =
+        deserializeOrNull(record)
+            ?.takeIf { it.op in CREATE_OPS }
+            ?.after
+            ?.let { payload ->
+                ParsedDlqEvent(
+                    articleId = payload.articleId,
+                    article = payload.toArticle(),
+                    articleUpdatedAt = payload.updatedAt?.let { Instant.parse(it) }
+                )
+            }
+
+    private fun deserializeOrNull(record: ConsumerRecord<String, String>): DebeziumEnvelope? =
+        record.value()?.let {
+            runCatching { objectMapper.readValue(it, DebeziumEnvelope::class.java) }
+                .onFailure { e -> log.error("DLQ: Failed to parse record at offset={}: {}", record.offset(), e.message, e) }
+                .getOrNull()
+        }
+
+    // ========== Side Effects ==========
+
+    private fun isOutdated(articleId: String, eventUpdatedAt: Instant?, offset: Long): Boolean =
+        eventUpdatedAt
+            ?.let { analysisResultRepository.findArticleUpdatedAtByArticleId(articleId) }
+            ?.let { existing -> eventUpdatedAt.isBefore(existing) }
+            ?.also { outdated -> if (outdated) log.info("DLQ: Discarding outdated event for articleId={}, offset={}", articleId, offset) }
+            ?: false
+
+    private suspend fun republishToDlqSafely(record: ConsumerRecord<String, String>, retryCount: Int, articleId: String) {
+        runCatching { dlqPublisher.publish(record.value(), retryCount, articleId) }
+            .onFailure { e -> log.error("DLQ: Failed to re-publish to DLQ, offset={}: {}", record.offset(), e.message, e) }
     }
 
     private fun extractRetryCount(record: ConsumerRecord<String, String>): Int =

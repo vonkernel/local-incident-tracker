@@ -80,7 +80,7 @@ CREATE TABLE analysis_result (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     article_id VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    article_updated_at TIMESTAMP WITH TIME ZONE,
+    article_updated_at TIMESTAMP,
     FOREIGN KEY (article_id) REFERENCES article(article_id) ON DELETE CASCADE
 );
 
@@ -131,8 +131,8 @@ CREATE TABLE refined_article (
     title TEXT NOT NULL,
     content TEXT NOT NULL,
     summary TEXT NOT NULL,
-    written_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    written_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE
 );
 
@@ -143,7 +143,7 @@ CREATE TABLE topic_analysis (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     analysis_result_id BIGINT NOT NULL UNIQUE,
     topic VARCHAR(500) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (analysis_result_id) REFERENCES analysis_result(id) ON DELETE CASCADE
 );
 
@@ -158,5 +158,56 @@ CREATE TABLE analysis_result_outbox (
     FOREIGN KEY (article_id) REFERENCES article(article_id) ON DELETE CASCADE
 );
 
+CREATE INDEX idx_address_name ON address(address_name);
+
 CREATE INDEX idx_outbox_article_id ON analysis_result_outbox(article_id);
 CREATE INDEX idx_outbox_created_at ON analysis_result_outbox(created_at);
+
+-- ============================================
+-- Master Data (V4)
+-- ============================================
+INSERT INTO urgency_type (name, level) VALUES
+    ('정보', 1),
+    ('주의', 3),
+    ('경계', 5),
+    ('심각', 7),
+    ('긴급', 9);
+
+INSERT INTO incident_type (code, name) VALUES
+    ('AVIAN_INFLUENZA', '조류독감'),
+    ('DROUGHT', '가뭄'),
+    ('LIVESTOCK_DISEASE', '가축질병'),
+    ('STRONG_WIND', '강풍'),
+    ('DRY_WEATHER', '건조'),
+    ('TRAFFIC', '교통'),
+    ('TRAFFIC_ACCIDENT', '교통사고'),
+    ('TRAFFIC_CONTROL', '교통통제'),
+    ('FINANCE', '금융'),
+    ('OTHER', '기타'),
+    ('HEAVY_SNOW', '대설'),
+    ('FINE_DUST', '미세먼지'),
+    ('CIVIL_DEFENSE', '민방공'),
+    ('COLLAPSE', '붕괴'),
+    ('FOREST_FIRE', '산불'),
+    ('LANDSLIDE', '산사태'),
+    ('WATER_SUPPLY', '수도'),
+    ('FOG', '안개'),
+    ('ENERGY', '에너지'),
+    ('EPIDEMIC', '전염병'),
+    ('POWER_OUTAGE', '정전'),
+    ('EARTHQUAKE', '지진'),
+    ('TSUNAMI', '지진해일'),
+    ('TYPHOON', '태풍'),
+    ('TERRORISM', '테러'),
+    ('COMMUNICATION', '통신'),
+    ('EXPLOSION', '폭발'),
+    ('HEAT_WAVE', '폭염'),
+    ('HIGH_SEAS', '풍랑'),
+    ('COLD_WAVE', '한파'),
+    ('HEAVY_RAIN', '호우'),
+    ('FLOOD', '홍수'),
+    ('FIRE', '화재'),
+    ('ENVIRONMENTAL_POLLUTION', '환경오염사고'),
+    ('YELLOW_DUST', '황사'),
+    ('MARITIME_ACCIDENT', '해양선박사고'),
+    ('DEATH', '사망');

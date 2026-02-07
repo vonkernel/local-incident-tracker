@@ -53,7 +53,7 @@ class IndexDocumentAssemblerTest {
     )
 
     @Test
-    fun `assemble maps all fields correctly`() {
+    fun `assemble은 모든 필드를 올바르게 매핑한다`() {
         val embedding = byteArrayOf(1, 2, 3, 4)
         val document = IndexDocumentAssembler.assemble(sampleAnalysisResult, embedding)
 
@@ -68,7 +68,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble converts writtenAt Instant to ZonedDateTime UTC`() {
+    fun `assemble은 writtenAt Instant를 UTC ZonedDateTime으로 변환한다`() {
         val document = IndexDocumentAssembler.assemble(sampleAnalysisResult)
 
         val expected = ZonedDateTime.ofInstant(Instant.parse("2026-01-30T03:21:55Z"), ZoneOffset.UTC)
@@ -77,7 +77,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble extracts geoPoints from locations with coordinates`() {
+    fun `assemble은 좌표가 있는 위치에서 geoPoints를 추출한다`() {
         val document = IndexDocumentAssembler.assemble(sampleAnalysisResult)
 
         assertEquals(2, document.geoPoints!!.size)
@@ -86,7 +86,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble extracts addresses from locations`() {
+    fun `assemble은 위치에서 주소를 추출한다`() {
         val document = IndexDocumentAssembler.assemble(sampleAnalysisResult)
 
         assertEquals(2, document.addresses!!.size)
@@ -95,7 +95,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble filters UNKNOWN codes from jurisdictionCodes`() {
+    fun `assemble은 jurisdictionCodes에서 UNKNOWN 코드를 필터링한다`() {
         val analysisResult = sampleAnalysisResult.copy(
             locations = listOf(
                 Location(
@@ -123,7 +123,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble skips null coordinates in geoPoints`() {
+    fun `assemble은 null 좌표를 geoPoints에서 제외한다`() {
         val analysisResult = sampleAnalysisResult.copy(
             locations = listOf(
                 Location(
@@ -144,7 +144,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble handles empty locations`() {
+    fun `assemble은 빈 위치 목록을 처리한다`() {
         val analysisResult = sampleAnalysisResult.copy(locations = emptyList())
 
         val document = IndexDocumentAssembler.assemble(analysisResult)
@@ -155,7 +155,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble sets optional fields to null`() {
+    fun `assemble은 선택 필드를 null로 설정한다`() {
         val document = IndexDocumentAssembler.assemble(sampleAnalysisResult)
 
         assertNull(document.sourceId)
@@ -164,7 +164,7 @@ class IndexDocumentAssemblerTest {
     }
 
     @Test
-    fun `assemble without embedding sets contentEmbedding to null`() {
+    fun `임베딩 없이 assemble하면 contentEmbedding이 null이다`() {
         val document = IndexDocumentAssembler.assemble(sampleAnalysisResult)
 
         assertNull(document.contentEmbedding)

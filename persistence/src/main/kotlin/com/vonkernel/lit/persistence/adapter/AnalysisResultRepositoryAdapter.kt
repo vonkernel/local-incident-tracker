@@ -48,12 +48,14 @@ class AnalysisResultRepositoryAdapter(
     override fun save(analysisResult: AnalysisResult, articleUpdatedAt: Instant?): AnalysisResult {
         deleteByArticleId(analysisResult.articleId)
 
-        return buildAnalysisResultEntity(analysisResult).apply {
-            this.articleUpdatedAt = articleUpdatedAt?.let { ZonedDateTime.ofInstant(it, ZoneOffset.UTC) }
-        }
+        return buildAnalysisResultEntity(analysisResult, articleUpdatedAt)
             .let { jpaAnalysisResultRepository.save(it) }
-            .also { jpaAnalysisResultOutboxRepository.save(outboxMapper.toPersistenceModel(analysisResult)) }
+            .also { saveOutbox(analysisResult) }
             .let { AnalysisResultMapper.toDomainModel(it) }
+    }
+
+    private fun saveOutbox(analysisResult: AnalysisResult) {
+        jpaAnalysisResultOutboxRepository.save(outboxMapper.toPersistenceModel(analysisResult))
     }
 
     @Transactional(readOnly = true)
@@ -62,8 +64,9 @@ class AnalysisResultRepositoryAdapter(
             ?.articleUpdatedAt
             ?.toInstant()
 
-    private fun buildAnalysisResultEntity(analysisResult: AnalysisResult): AnalysisResultEntity =
+    private fun buildAnalysisResultEntity(analysisResult: AnalysisResult, articleUpdatedAt: Instant?): AnalysisResultEntity =
         AnalysisResultEntity(articleId = analysisResult.articleId).apply {
+            this.articleUpdatedAt = articleUpdatedAt?.let { ZonedDateTime.ofInstant(it, ZoneOffset.UTC) }
             RefinedArticleMapper.toPersistenceModel(analysisResult.refinedArticle).setupAnalysisResult(this)
             TopicMapper.toPersistenceModel(analysisResult.topic).setupAnalysisResult(this)
             createUrgencyMapping(loadUrgency(analysisResult)).setupAnalysisResult(this)

@@ -1,14 +1,19 @@
 package com.vonkernel.lit.indexer.adapter.outbound.opensearch
 
 import com.vonkernel.lit.core.entity.*
+import com.vonkernel.lit.indexer.domain.exception.BulkIndexingPartialFailureException
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.opensearch.client.opensearch.OpenSearchClient
 import org.opensearch.client.opensearch.core.*
+import org.opensearch.client.opensearch.core.bulk.BulkResponseItem
+import org.opensearch.client.opensearch._types.ErrorCause
 import org.opensearch.client.opensearch._types.Result
 import org.opensearch.client.util.ObjectBuilder
+import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
@@ -57,7 +62,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `index calls OpenSearch client with correct index and document id`() = runTest {
+    fun `index는 올바른 인덱스와 문서 ID로 OpenSearch 클라이언트를 호출한다`() = runTest {
         val indexResponse = mockk<IndexResponse>()
         every { indexResponse.result() } returns Result.Created
 
@@ -73,7 +78,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `delete calls OpenSearch client with correct index and id`() = runTest {
+    fun `delete는 올바른 인덱스와 ID로 OpenSearch 클라이언트를 호출한다`() = runTest {
         val deleteResponse = mockk<DeleteResponse>()
         every { deleteResponse.result() } returns Result.Deleted
 
@@ -89,7 +94,7 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `indexAll calls OpenSearch bulk API with all documents`() = runTest {
+    fun `indexAll은 모든 문서로 OpenSearch bulk API를 호출한다`() = runTest {
         val bulkResponse = mockk<BulkResponse>()
         every { bulkResponse.errors() } returns false
         every { bulkResponse.items() } returns emptyList()
@@ -104,9 +109,98 @@ class OpenSearchArticleIndexerTest {
     }
 
     @Test
-    fun `indexAll does nothing for empty list`() = runTest {
+    fun `indexAll은 빈 리스트에 대해 아무 작업도 하지 않는다`() = runTest {
         adapter.indexAll(emptyList())
 
         verify(exactly = 0) { openSearchClient.bulk(any<BulkRequest>()) }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    @Test
+    fun `findModifiedAtByArticleId는 문서 존재 시 Instant를 반환한다`() = runTest {
+        val getResponse = mockk<GetResponse<Any>>()
+        every { getResponse.found() } returns true
+        every { getResponse.source() } returns mapOf("modifiedAt" to "2026-01-30T08:33:30Z")
+
+        every {
+            openSearchClient.get(
+                any<java.util.function.Function<GetRequest.Builder, ObjectBuilder<GetRequest>>>(),
+                any<Class<*>>()
+            )
+        } returns getResponse as GetResponse<Nothing>
+
+        val result = adapter.findModifiedAtByArticleId("test-001")
+
+        assertEquals(Instant.parse("2026-01-30T08:33:30Z"), result)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    @Test
+    fun `findModifiedAtByArticleId는 문서 미발견 시 null을 반환한다`() = runTest {
+        val getResponse = mockk<GetResponse<Any>>()
+        every { getResponse.found() } returns false
+
+        every {
+            openSearchClient.get(
+                any<java.util.function.Function<GetRequest.Builder, ObjectBuilder<GetRequest>>>(),
+                any<Class<*>>()
+            )
+        } returns getResponse as GetResponse<Nothing>
+
+        val result = adapter.findModifiedAtByArticleId("nonexistent")
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `findModifiedAtByArticleId는 OpenSearch 예외 시 null을 반환한다`() = runTest {
+        every {
+            openSearchClient.get(
+                any<java.util.function.Function<GetRequest.Builder, ObjectBuilder<GetRequest>>>(),
+                any<Class<*>>()
+            )
+        } throws RuntimeException("OpenSearch unavailable")
+
+        val result = adapter.findModifiedAtByArticleId("test-001")
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `indexAll은 부분 실패 시 BulkIndexingPartialFailureException을 발생시킨다`() = runTest {
+        val failedItem = mockk<BulkResponseItem>()
+        val errorCause = mockk<ErrorCause>()
+        every { failedItem.id() } returns "test-002"
+        every { failedItem.error() } returns errorCause
+        every { errorCause.reason() } returns "mapper_parsing_exception"
+
+        val successItem = mockk<BulkResponseItem>()
+        every { successItem.id() } returns "test-001"
+        every { successItem.error() } returns null
+
+        val bulkResponse = mockk<BulkResponse>()
+        every { bulkResponse.errors() } returns true
+        every { bulkResponse.items() } returns listOf(successItem, failedItem)
+
+        every { openSearchClient.bulk(any<BulkRequest>()) } returns bulkResponse
+
+        val exception = assertThrows(BulkIndexingPartialFailureException::class.java) {
+            kotlinx.coroutines.runBlocking { adapter.indexAll(listOf(sampleDocument, sampleDocument2)) }
+        }
+
+        assertEquals(listOf("test-002"), exception.failedArticleIds)
+        assertTrue(exception.message!!.contains("1/2"))
+    }
+
+    @Test
+    fun `indexAll은 bulk 응답에 오류가 없으면 성공한다`() = runTest {
+        val bulkResponse = mockk<BulkResponse>()
+        every { bulkResponse.errors() } returns false
+
+        every { openSearchClient.bulk(any<BulkRequest>()) } returns bulkResponse
+
+        adapter.indexAll(listOf(sampleDocument, sampleDocument2))
+
+        verify { openSearchClient.bulk(any<BulkRequest>()) }
     }
 }

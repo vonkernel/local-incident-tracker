@@ -19,7 +19,7 @@ class SearchResultMapperTest {
     private val mapper = ObjectMapper()
 
     @Test
-    fun `maps empty response to empty result`() {
+    fun `빈 응답을 빈 결과로 매핑한다`() {
         val response = mockSearchResponse(hits = emptyList(), totalHits = 0)
 
         val result = SearchResultMapper.map(response, 0, 20)
@@ -31,7 +31,7 @@ class SearchResultMapperTest {
     }
 
     @Test
-    fun `maps hit documents to domain models`() {
+    fun `검색 결과 문서를 도메인 모델로 매핑한다`() {
         val source = mapper.createObjectNode().apply {
             put("articleId", "art-001")
             put("title", "서울 폭우 피해")
@@ -80,7 +80,7 @@ class SearchResultMapperTest {
     }
 
     @Test
-    fun `maps pagination metadata correctly`() {
+    fun `페이지네이션 메타데이터를 올바르게 매핑한다`() {
         val response = mockSearchResponse(hits = emptyList(), totalHits = 100)
 
         val result = SearchResultMapper.map(response, 3, 10)
@@ -91,7 +91,7 @@ class SearchResultMapperTest {
     }
 
     @Test
-    fun `handles null optional fields gracefully`() {
+    fun `null인 선택 필드를 정상 처리한다`() {
         val source = mapper.createObjectNode().apply {
             put("articleId", "art-002")
             putNull("sourceId")

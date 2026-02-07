@@ -34,6 +34,9 @@ class PromptOrchestrator(
     private val promptLoader: PromptLoader,
     @param:Qualifier("aiCoreObjectMapper") private val objectMapper: ObjectMapper
 ) {
+    companion object {
+        private val TEMPLATE_VARIABLE_REGEX = Regex("""\{\{(\w+)\}\}""")
+    }
     /**
      * 프롬프트 ID로 프롬프트를 로드하고 입력 데이터로 실행
      *
@@ -141,7 +144,7 @@ class PromptOrchestrator(
      * @return 변수 이름 Set
      */
     private fun extractTemplateVariables(template: String): Set<String> =
-        Regex("""\{\{(\w+)\}\}""")
+        TEMPLATE_VARIABLE_REGEX
             .findAll(template)
             .map { it.groupValues[1] }
             .toSet()
@@ -180,7 +183,7 @@ class PromptOrchestrator(
         template: String,
         inputFields: Map<String, Any>
     ): String =
-        Regex("""\{\{(\w+)\}\}""")
+        TEMPLATE_VARIABLE_REGEX
             .replace(template) { match ->
                 inputFields[match.groupValues[1]]?.toString() ?: match.value
             }

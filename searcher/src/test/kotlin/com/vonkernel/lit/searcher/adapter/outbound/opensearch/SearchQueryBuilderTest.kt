@@ -16,7 +16,7 @@ class SearchQueryBuilderTest {
     // --- 기본 쿼리 ---
 
     @Test
-    fun `empty criteria produces match_all query`() {
+    fun `빈 검색 조건은 match_all 쿼리를 생성한다`() {
         val criteria = SearchCriteria()
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -24,7 +24,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `text only RELEVANCE sort produces multiMatch in must`() {
+    fun `텍스트만 있는 RELEVANCE 정렬은 must에 multiMatch를 생성한다`() {
         val criteria = SearchCriteria(query = "화재", sortBy = SortType.RELEVANCE)
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -35,7 +35,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `DATE sort with text produces multiMatch directly`() {
+    fun `텍스트가 있는 DATE 정렬은 multiMatch를 직접 생성한다`() {
         val criteria = SearchCriteria(query = "폭우", sortBy = SortType.DATE)
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -46,7 +46,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `DISTANCE sort with text produces multiMatch and geo_distance sort`() {
+    fun `텍스트가 있는 DISTANCE 정렬은 multiMatch와 geo_distance 정렬을 생성한다`() {
         val criteria = SearchCriteria(
             query = "사고",
             sortBy = SortType.DISTANCE,
@@ -68,7 +68,7 @@ class SearchQueryBuilderTest {
     // --- Semantic search ---
 
     @Test
-    fun `semantic search uses hybrid query with knn and multiMatch sub-queries`() {
+    fun `시맨틱 검색은 knn과 multiMatch 하위 쿼리로 hybrid 쿼리를 사용한다`() {
         val criteria = SearchCriteria(query = "화재", semanticSearch = true, sortBy = SortType.RELEVANCE)
         val embedding = floatsToByteArray(FloatArray(128) { 0.1f })
 
@@ -80,7 +80,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `semantic search with filters applies pre-filters to hybrid sub-queries`() {
+    fun `필터가 있는 시맨틱 검색은 hybrid 하위 쿼리에 사전 필터를 적용한다`() {
         val criteria = SearchCriteria(
             query = "폭우 피해",
             semanticSearch = true,
@@ -114,7 +114,7 @@ class SearchQueryBuilderTest {
     // --- 필터 ---
 
     @Test
-    fun `jurisdiction code filter uses prefix query`() {
+    fun `관할 코드 필터는 prefix 쿼리를 사용한다`() {
         val criteria = SearchCriteria(jurisdictionCode = "11680")
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -124,7 +124,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `address query filter uses nested bool should`() {
+    fun `주소 쿼리 필터는 nested bool should를 사용한다`() {
         val criteria = SearchCriteria(addressQuery = "경북 청도군")
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -134,7 +134,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `region filter uses nested bool must with term queries`() {
+    fun `지역 필터는 term 쿼리로 nested bool must를 사용한다`() {
         val criteria = SearchCriteria(region = RegionFilter(depth1Name = "경북", depth2Name = "청도군"))
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -144,7 +144,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `region filter with only depth1Name produces single term query`() {
+    fun `depth1Name만 있는 지역 필터는 단일 term 쿼리를 생성한다`() {
         val criteria = SearchCriteria(region = RegionFilter(depth1Name = "서울"))
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -154,7 +154,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `empty region filter is ignored`() {
+    fun `빈 지역 필터는 무시된다`() {
         val criteria = SearchCriteria(region = RegionFilter())
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -162,7 +162,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `proximity filter uses nested geo_distance query`() {
+    fun `근접 필터는 nested geo_distance 쿼리를 사용한다`() {
         val criteria = SearchCriteria(proximity = ProximityFilter(37.5665, 126.9780, 25.0))
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -172,7 +172,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `incident types filter uses nested terms query`() {
+    fun `사건 유형 필터는 nested terms 쿼리를 사용한다`() {
         val criteria = SearchCriteria(incidentTypes = setOf("forest_fire", "typhoon"))
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -182,7 +182,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `urgency filter uses range query with gte`() {
+    fun `긴급도 필터는 gte가 포함된 range 쿼리를 사용한다`() {
         val criteria = SearchCriteria(urgencyLevel = 3)
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -192,7 +192,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `date range filter uses range query`() {
+    fun `날짜 범위 필터는 range 쿼리를 사용한다`() {
         val criteria = SearchCriteria(
             dateFrom = ZonedDateTime.parse("2025-01-01T00:00:00+09:00"),
             dateTo = ZonedDateTime.parse("2025-12-31T23:59:59+09:00"),
@@ -205,7 +205,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `date range filter with only dateFrom`() {
+    fun `dateFrom만 있는 날짜 범위 필터`() {
         val criteria = SearchCriteria(dateFrom = ZonedDateTime.parse("2025-06-01T00:00:00+09:00"))
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -217,7 +217,7 @@ class SearchQueryBuilderTest {
     // --- 텍스트 + 필터 결합 ---
 
     @Test
-    fun `text query with filters wraps in bool must + filter`() {
+    fun `필터가 있는 텍스트 쿼리는 bool must + filter로 감싼다`() {
         val criteria = SearchCriteria(
             query = "화재",
             jurisdictionCode = "11680",
@@ -234,7 +234,7 @@ class SearchQueryBuilderTest {
     // --- 페이지네이션 & 하이라이트 ---
 
     @Test
-    fun `pagination is correctly applied`() {
+    fun `페이지네이션이 올바르게 적용된다`() {
         val criteria = SearchCriteria(page = 2, size = 10)
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
@@ -243,7 +243,7 @@ class SearchQueryBuilderTest {
     }
 
     @Test
-    fun `highlight fields are configured`() {
+    fun `하이라이트 필드가 설정된다`() {
         val criteria = SearchCriteria()
         val request = SearchQueryBuilder.build(criteria, null, indexName)
 
