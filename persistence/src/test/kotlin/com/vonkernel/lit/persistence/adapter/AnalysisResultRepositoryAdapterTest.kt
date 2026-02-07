@@ -57,36 +57,13 @@ class AnalysisResultRepositoryAdapterTest {
 
     @BeforeEach
     fun setUp() {
-        // 1. Urgency Types 초기화 (3개: LOW, MEDIUM, HIGH)
-        urgencyLow = jpaUrgencyTypeRepository.save(
-            TestFixtures.createUrgencyEntity(name = "LOW", level = 1)
-        )
-        urgencyMedium = jpaUrgencyTypeRepository.save(
-            TestFixtures.createUrgencyEntity(name = "MEDIUM", level = 2)
-        )
-        urgencyHigh = jpaUrgencyTypeRepository.save(
-            TestFixtures.createUrgencyEntity(name = "HIGH", level = 3)
-        )
+        // 1. Urgency Types - schema-h2.sql에서 INSERT된 마스터 데이터 로드
+        urgencyLow = jpaUrgencyTypeRepository.findByName("정보")!!
+        urgencyMedium = jpaUrgencyTypeRepository.findByName("주의")!!
+        urgencyHigh = jpaUrgencyTypeRepository.findByName("긴급")!!
 
-        // 2. Incident Types 초기화 (10개의 대표 유형)
-        val incidentTypeList = listOf(
-            "fire" to "산불",
-            "typhoon" to "태풍",
-            "flood" to "홍수",
-            "earthquake" to "지진",
-            "landslide" to "산사태",
-            "heavy_snow" to "폭설",
-            "heat_wave" to "폭염",
-            "cold_wave" to "한파",
-            "storm" to "폭풍",
-            "drought" to "가뭄"
-        )
-
-        incidentTypes = incidentTypeList.associate { (code, name) ->
-            code to jpaIncidentTypeRepository.save(
-                TestFixtures.createIncidentTypeEntity(code = code, name = name)
-            )
-        }
+        // 2. Incident Types - schema-h2.sql에서 INSERT된 마스터 데이터 로드
+        incidentTypes = jpaIncidentTypeRepository.findAll().associateBy { it.code }
     }
 
     // ===== Part 1: 기본 save() 흐름 테스트 (5개) =====
@@ -103,7 +80,7 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = emptySet(),
-            urgency = TestFixtures.createUrgency(name = "HIGH", level = 3),
+            urgency = TestFixtures.createUrgency(name = "긴급", level = 9),
             keywords = emptyList(),
             locations = emptyList()
         )
@@ -113,8 +90,8 @@ class AnalysisResultRepositoryAdapterTest {
 
         // Then: 반환값 검증
         assertThat(saved.articleId).isEqualTo("article-minimal-1")
-        assertThat(saved.urgency.name).isEqualTo("HIGH")
-        assertThat(saved.urgency.level).isEqualTo(3)
+        assertThat(saved.urgency.name).isEqualTo("긴급")
+        assertThat(saved.urgency.level).isEqualTo(9)
         assertThat(saved.incidentTypes).isEmpty()
         assertThat(saved.keywords).isEmpty()
         assertThat(saved.locations).isEmpty()
@@ -123,7 +100,7 @@ class AnalysisResultRepositoryAdapterTest {
         val fromDb = jpaAnalysisResultRepository.findAll()
         assertThat(fromDb).hasSize(1)
         assertThat(fromDb[0].urgencyMapping).isNotNull
-        assertThat(fromDb[0].urgencyMapping?.urgencyType?.name).isEqualTo("HIGH")
+        assertThat(fromDb[0].urgencyMapping?.urgencyType?.name).isEqualTo("긴급")
         assertThat(fromDb[0].incidentTypeMappings).isEmpty()
         assertThat(fromDb[0].keywords).isEmpty()
         assertThat(fromDb[0].addressMappings).isEmpty()
@@ -133,7 +110,7 @@ class AnalysisResultRepositoryAdapterTest {
         assertThat(outboxEntries).hasSize(1)
         assertThat(outboxEntries[0].articleId).isEqualTo("article-minimal-1")
         assertThat(outboxEntries[0].payload).contains("\"urgency\"")
-        assertThat(outboxEntries[0].payload).contains("HIGH")
+        assertThat(outboxEntries[0].payload).contains("긴급")
     }
 
     @Test
@@ -148,10 +125,10 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(
                 TestFixtures.createKeyword("화재", 10),
                 TestFixtures.createKeyword("대피", 8),
@@ -171,8 +148,8 @@ class AnalysisResultRepositoryAdapterTest {
         // Then: 반환값 검증
         assertThat(saved.articleId).isEqualTo("article-standard-1")
         assertThat(saved.incidentTypes).hasSize(2)
-        assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder("fire", "typhoon")
-        assertThat(saved.urgency.name).isEqualTo("HIGH")
+        assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder("FOREST_FIRE", "TYPHOON")
+        assertThat(saved.urgency.name).isEqualTo("긴급")
         assertThat(saved.keywords).hasSize(3)
         assertThat(saved.keywords.map { it.keyword }).containsExactlyInAnyOrder("화재", "대피", "경고")
         assertThat(saved.locations).hasSize(1)
@@ -202,8 +179,8 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
-            urgency = TestFixtures.createUrgency("MEDIUM", 2),
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불")),
+            urgency = TestFixtures.createUrgency("주의", 3),
             keywords = listOf(TestFixtures.createKeyword("테스트", 5)),
             locations = emptyList()
         )
@@ -230,7 +207,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("LOW", 1)
+            urgency = TestFixtures.createUrgency("정보", 1)
         )
 
         // When
@@ -258,13 +235,13 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍"),
-                TestFixtures.createIncidentType("flood", "홍수"),
-                TestFixtures.createIncidentType("earthquake", "지진"),
-                TestFixtures.createIncidentType("landslide", "산사태")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍"),
+                TestFixtures.createIncidentType("FLOOD", "홍수"),
+                TestFixtures.createIncidentType("EARTHQUAKE", "지진"),
+                TestFixtures.createIncidentType("LANDSLIDE", "산사태")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = TestFixtures.createKeywords(10),
             locations = TestFixtures.createLocations(3)
         )
@@ -299,20 +276,20 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When
         val saved = adapter.save(analysisResult)
 
         // Then
-        assertThat(saved.urgency.name).isEqualTo("HIGH")
-        assertThat(saved.urgency.level).isEqualTo(3)
+        assertThat(saved.urgency.name).isEqualTo("긴급")
+        assertThat(saved.urgency.level).isEqualTo(9)
 
         // Then: UrgencyMappingEntity가 기존 UrgencyTypeEntity 참조
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         assertThat(fromDb.urgencyMapping?.urgencyType?.id).isEqualTo(urgencyHigh.id)
-        assertThat(fromDb.urgencyMapping?.urgencyType?.name).isEqualTo("HIGH")
+        assertThat(fromDb.urgencyMapping?.urgencyType?.name).isEqualTo("긴급")
     }
 
     @Test
@@ -324,14 +301,14 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("LOW", 1)
+            urgency = TestFixtures.createUrgency("정보", 1)
         )
 
         // When
         val saved = adapter.save(analysisResult)
 
         // Then
-        assertThat(saved.urgency.name).isEqualTo("LOW")
+        assertThat(saved.urgency.name).isEqualTo("정보")
         assertThat(saved.urgency.level).isEqualTo(1)
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
@@ -347,15 +324,15 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("MEDIUM", 2)
+            urgency = TestFixtures.createUrgency("주의", 3)
         )
 
         // When
         val saved = adapter.save(analysisResult)
 
         // Then
-        assertThat(saved.urgency.name).isEqualTo("MEDIUM")
-        assertThat(saved.urgency.level).isEqualTo(2)
+        assertThat(saved.urgency.name).isEqualTo("주의")
+        assertThat(saved.urgency.level).isEqualTo(3)
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         assertThat(fromDb.urgencyMapping?.urgencyType?.id).isEqualTo(urgencyMedium.id)
@@ -394,7 +371,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When
@@ -407,7 +384,7 @@ class AnalysisResultRepositoryAdapterTest {
         assertThat(urgencyMapping).isNotNull
         assertThat(urgencyMapping!!.analysisResult).isEqualTo(fromDb)
         assertThat(fromDb.urgencyMapping).isEqualTo(urgencyMapping)
-        assertThat(urgencyMapping.urgencyType?.name).isEqualTo("HIGH")
+        assertThat(urgencyMapping.urgencyType?.name).isEqualTo("긴급")
     }
 
     // ===== Part 3: loadIncidentTypes() 테스트 (8개) =====
@@ -443,7 +420,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불"))
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불"))
         )
 
         // When
@@ -451,11 +428,11 @@ class AnalysisResultRepositoryAdapterTest {
 
         // Then
         assertThat(saved.incidentTypes).hasSize(1)
-        assertThat(saved.incidentTypes.first().code).isEqualTo("fire")
+        assertThat(saved.incidentTypes.first().code).isEqualTo("FOREST_FIRE")
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         assertThat(fromDb.incidentTypeMappings).hasSize(1)
-        assertThat(fromDb.incidentTypeMappings.first().incidentType?.code).isEqualTo("fire")
+        assertThat(fromDb.incidentTypeMappings.first().incidentType?.code).isEqualTo("FOREST_FIRE")
     }
 
     @Test
@@ -468,11 +445,11 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍"),
-                TestFixtures.createIncidentType("flood", "홍수"),
-                TestFixtures.createIncidentType("earthquake", "지진"),
-                TestFixtures.createIncidentType("landslide", "산사태")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍"),
+                TestFixtures.createIncidentType("FLOOD", "홍수"),
+                TestFixtures.createIncidentType("EARTHQUAKE", "지진"),
+                TestFixtures.createIncidentType("LANDSLIDE", "산사태")
             )
         )
 
@@ -482,7 +459,7 @@ class AnalysisResultRepositoryAdapterTest {
         // Then
         assertThat(saved.incidentTypes).hasSize(5)
         assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder(
-            "fire", "typhoon", "flood", "earthquake", "landslide"
+            "FOREST_FIRE", "TYPHOON", "FLOOD", "EARTHQUAKE", "LANDSLIDE"
         )
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
@@ -499,9 +476,9 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
                 TestFixtures.createIncidentType("nonexistent", "없음"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             )
         )
 
@@ -510,7 +487,7 @@ class AnalysisResultRepositoryAdapterTest {
 
         // Then: 존재하는 2개만 로드됨 (fire, typhoon)
         assertThat(saved.incidentTypes).hasSize(2)
-        assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder("fire", "typhoon")
+        assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder("FOREST_FIRE", "TYPHOON")
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         assertThat(fromDb.incidentTypeMappings).hasSize(2)
@@ -526,8 +503,8 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             )
         )
 
@@ -537,7 +514,7 @@ class AnalysisResultRepositoryAdapterTest {
         // Then: 저장된 매핑이 정확히 요청한 codes와 일치
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         val loadedCodes = fromDb.incidentTypeMappings.map { it.incidentType?.code }
-        assertThat(loadedCodes).containsExactlyInAnyOrder("fire", "typhoon")
+        assertThat(loadedCodes).containsExactlyInAnyOrder("FOREST_FIRE", "TYPHOON")
     }
 
     @Test
@@ -550,8 +527,8 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("flood", "홍수")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("FLOOD", "홍수")
             )
         )
 
@@ -576,9 +553,9 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍"),
-                TestFixtures.createIncidentType("flood", "홍수")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍"),
+                TestFixtures.createIncidentType("FLOOD", "홍수")
             )
         )
 
@@ -587,7 +564,7 @@ class AnalysisResultRepositoryAdapterTest {
 
         // Then: Set이므로 순서 보장 안 함 (containsExactlyInAnyOrder 사용)
         assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder(
-            "fire", "typhoon", "flood"
+            "FOREST_FIRE", "TYPHOON", "FLOOD"
         )
     }
 
@@ -601,16 +578,16 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍"),
-                TestFixtures.createIncidentType("flood", "홍수"),
-                TestFixtures.createIncidentType("earthquake", "지진"),
-                TestFixtures.createIncidentType("landslide", "산사태"),
-                TestFixtures.createIncidentType("heavy_snow", "폭설"),
-                TestFixtures.createIncidentType("heat_wave", "폭염"),
-                TestFixtures.createIncidentType("cold_wave", "한파"),
-                TestFixtures.createIncidentType("storm", "폭풍"),
-                TestFixtures.createIncidentType("drought", "가뭄")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍"),
+                TestFixtures.createIncidentType("FLOOD", "홍수"),
+                TestFixtures.createIncidentType("EARTHQUAKE", "지진"),
+                TestFixtures.createIncidentType("LANDSLIDE", "산사태"),
+                TestFixtures.createIncidentType("HEAVY_SNOW", "대설"),
+                TestFixtures.createIncidentType("HEAT_WAVE", "폭염"),
+                TestFixtures.createIncidentType("COLD_WAVE", "한파"),
+                TestFixtures.createIncidentType("STRONG_WIND", "강풍"),
+                TestFixtures.createIncidentType("DROUGHT", "가뭄")
             )
         )
 
@@ -976,7 +953,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When
@@ -1001,8 +978,8 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             )
         )
 
@@ -1084,8 +1061,8 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불")),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(TestFixtures.createKeyword("화재", 10)),
             locations = listOf(TestFixtures.createLocation())
         )
@@ -1125,10 +1102,10 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(TestFixtures.createKeyword("화재", 10)),
             locations = listOf(TestFixtures.createLocation())
         )
@@ -1157,10 +1134,10 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(TestFixtures.createKeyword("화재", 10)),
             locations = listOf(TestFixtures.createLocation())
         )
@@ -1215,7 +1192,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When
@@ -1237,7 +1214,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When
@@ -1258,7 +1235,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불"))
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불"))
         )
 
         // When
@@ -1268,7 +1245,7 @@ class AnalysisResultRepositoryAdapterTest {
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         val mapping = fromDb.incidentTypeMappings.first()
         assertThat(mapping.incidentType?.id).isNotNull
-        assertThat(mapping.incidentType?.code).isEqualTo("fire")
+        assertThat(mapping.incidentType?.code).isEqualTo("FOREST_FIRE")
     }
 
     @Test
@@ -1302,8 +1279,8 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("fire", "산불")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불")
             )
         )
 
@@ -1346,8 +1323,8 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불")),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(TestFixtures.createKeyword("화재", 10)),
             locations = listOf(TestFixtures.createLocation())
         )
@@ -1372,8 +1349,8 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불")),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(TestFixtures.createKeyword("화재", 10)),
             locations = listOf(TestFixtures.createLocation())
         )
@@ -1413,10 +1390,10 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(
                 TestFixtures.createKeyword("화재", 10),
                 TestFixtures.createKeyword("대피", 8)
@@ -1446,7 +1423,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When
@@ -1471,7 +1448,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("MEDIUM", 2)
+            urgency = TestFixtures.createUrgency("주의", 3)
         )
 
         // When
@@ -1492,10 +1469,10 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = listOf(TestFixtures.createKeyword("화재", 10)),
             locations = listOf(TestFixtures.createLocation())
         )
@@ -1511,7 +1488,7 @@ class AnalysisResultRepositoryAdapterTest {
         assertThat(payload).contains("article-outbox-json")
         assertThat(payload).contains("\"incidentTypes\"")
         assertThat(payload).contains("\"urgency\"")
-        assertThat(payload).contains("HIGH")
+        assertThat(payload).contains("긴급")
         assertThat(payload).contains("\"keywords\"")
         assertThat(payload).contains("\"locations\"")
 
@@ -1531,7 +1508,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("LOW", 1)
+            urgency = TestFixtures.createUrgency("정보", 1)
         )
 
         // When
@@ -1554,7 +1531,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When
@@ -1582,7 +1559,7 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = emptySet(),
-            urgency = TestFixtures.createUrgency("LOW", 1),
+            urgency = TestFixtures.createUrgency("정보", 1),
             keywords = emptyList(),
             locations = emptyList()
         )
@@ -1591,7 +1568,7 @@ class AnalysisResultRepositoryAdapterTest {
         val saved = adapter.save(analysisResult)
 
         // Then
-        assertThat(saved.urgency.name).isEqualTo("LOW")
+        assertThat(saved.urgency.name).isEqualTo("정보")
         assertThat(saved.incidentTypes).isEmpty()
         assertThat(saved.keywords).isEmpty()
         assertThat(saved.locations).isEmpty()
@@ -1614,18 +1591,18 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
-                TestFixtures.createIncidentType("typhoon", "태풍"),
-                TestFixtures.createIncidentType("flood", "홍수"),
-                TestFixtures.createIncidentType("earthquake", "지진"),
-                TestFixtures.createIncidentType("landslide", "산사태"),
-                TestFixtures.createIncidentType("heavy_snow", "폭설"),
-                TestFixtures.createIncidentType("heat_wave", "폭염"),
-                TestFixtures.createIncidentType("cold_wave", "한파"),
-                TestFixtures.createIncidentType("storm", "폭풍"),
-                TestFixtures.createIncidentType("drought", "가뭄")
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍"),
+                TestFixtures.createIncidentType("FLOOD", "홍수"),
+                TestFixtures.createIncidentType("EARTHQUAKE", "지진"),
+                TestFixtures.createIncidentType("LANDSLIDE", "산사태"),
+                TestFixtures.createIncidentType("HEAVY_SNOW", "대설"),
+                TestFixtures.createIncidentType("HEAT_WAVE", "폭염"),
+                TestFixtures.createIncidentType("COLD_WAVE", "한파"),
+                TestFixtures.createIncidentType("STRONG_WIND", "강풍"),
+                TestFixtures.createIncidentType("DROUGHT", "가뭄")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             keywords = TestFixtures.createKeywords(100),
             locations = TestFixtures.createLocations(100)
         )
@@ -1691,12 +1668,12 @@ class AnalysisResultRepositoryAdapterTest {
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
             incidentTypes = setOf(
-                TestFixtures.createIncidentType("fire", "산불"),
+                TestFixtures.createIncidentType("FOREST_FIRE", "산불"),
                 TestFixtures.createIncidentType("does_not_exist_1", "없음1"),
-                TestFixtures.createIncidentType("typhoon", "태풍"),
+                TestFixtures.createIncidentType("TYPHOON", "태풍"),
                 TestFixtures.createIncidentType("does_not_exist_2", "없음2")
             ),
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When: 존재하는 것만 로드됨
@@ -1704,7 +1681,7 @@ class AnalysisResultRepositoryAdapterTest {
 
         // Then: 존재하는 2개만 저장됨
         assertThat(saved.incidentTypes).hasSize(2)
-        assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder("fire", "typhoon")
+        assertThat(saved.incidentTypes.map { it.code }).containsExactlyInAnyOrder("FOREST_FIRE", "TYPHOON")
 
         val fromDb = jpaAnalysisResultRepository.findAll()[0]
         assertThat(fromDb.incidentTypeMappings).hasSize(2)
@@ -1719,7 +1696,7 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            urgency = TestFixtures.createUrgency("HIGH", 3),
+            urgency = TestFixtures.createUrgency("긴급", 9),
             locations = listOf(
                 TestFixtures.createLocation(
                     address = TestFixtures.createAddress(
@@ -1763,15 +1740,15 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val firstResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불")),
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
         adapter.save(firstResult)
 
         val secondResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불")),
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When & Then
@@ -1788,8 +1765,8 @@ class AnalysisResultRepositoryAdapterTest {
         )
         val analysisResult = TestFixtures.createAnalysisResult(
             articleId = article.articleId,
-            incidentTypes = setOf(TestFixtures.createIncidentType("fire", "산불")),
-            urgency = TestFixtures.createUrgency("HIGH", 3)
+            incidentTypes = setOf(TestFixtures.createIncidentType("FOREST_FIRE", "산불")),
+            urgency = TestFixtures.createUrgency("긴급", 9)
         )
 
         // When & Then
