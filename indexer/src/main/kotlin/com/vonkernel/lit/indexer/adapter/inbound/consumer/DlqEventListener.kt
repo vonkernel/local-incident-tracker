@@ -1,6 +1,7 @@
 package com.vonkernel.lit.indexer.adapter.inbound.consumer
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.indexer.adapter.inbound.consumer.model.DebeziumOutboxEnvelope
 import com.vonkernel.lit.indexer.adapter.inbound.consumer.model.toAnalysisResult
 import com.vonkernel.lit.indexer.domain.port.DlqPublisher
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.stereotype.Component
+import java.time.Instant
 
 @Component
 class DlqEventListener(
@@ -21,6 +23,12 @@ class DlqEventListener(
     @param:Value("\${kafka.dlq.max-retries}") private val maxRetries: Int
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    private data class ParsedEnvelope(
+        val articleId: String,
+        val analysisResult: AnalysisResult,
+        val analyzedAt: Instant?,
+    )
 
     companion object {
         private const val RETRY_COUNT_HEADER = "dlq-retry-count"
@@ -41,23 +49,26 @@ class DlqEventListener(
 
     private suspend fun processRecord(rawValue: String, retryCount: Int, offset: Long) {
         parseEnvelope(rawValue, offset)
-            ?.let { (articleId, analysisResult) ->
-                runCatching { articleIndexingService.index(analysisResult) }
-                    .onSuccess { log.info("DLQ: Successfully re-indexed articleId={}, retryCount={}", articleId, retryCount) }
+            ?.let { parsed ->
+                runCatching { articleIndexingService.index(parsed.analysisResult, parsed.analyzedAt) }
+                    .onSuccess { log.info("DLQ: Successfully re-indexed articleId={}, retryCount={}", parsed.articleId, retryCount) }
                     .onFailure { e ->
                         log.error("DLQ: Failed to re-index event, offset={}, retryCount={}: {}", offset, retryCount, e.message, e)
-                        republishToDlq(rawValue, retryCount + 1, articleId, offset)
+                        republishToDlq(rawValue, retryCount + 1, parsed.articleId, offset)
                     }
             }
     }
 
-    private fun parseEnvelope(rawValue: String, offset: Long) =
+    private fun parseEnvelope(rawValue: String, offset: Long): ParsedEnvelope? =
         runCatching { objectMapper.readValue(rawValue, DebeziumOutboxEnvelope::class.java) }
             .getOrNull()
             ?.takeIf { it.op in CREATE_OPS }
             ?.also { if (it.op !in CREATE_OPS) log.debug("DLQ: Ignoring non-create CDC event, offset={}", offset) }
             ?.after
-            ?.let { payload -> payload.articleId to payload.toAnalysisResult(objectMapper) }
+            ?.let { payload ->
+                val (analyzedAt, analysisResult) = payload.toAnalysisResult(objectMapper)
+                ParsedEnvelope(payload.articleId, analysisResult, analyzedAt)
+            }
 
     private suspend fun republishToDlq(rawValue: String, retryCount: Int, articleId: String, offset: Long) {
         runCatching { dlqPublisher.publish(rawValue, retryCount, articleId) }

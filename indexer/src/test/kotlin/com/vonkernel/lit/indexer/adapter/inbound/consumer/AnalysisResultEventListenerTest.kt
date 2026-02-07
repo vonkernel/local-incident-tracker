@@ -9,6 +9,7 @@ import io.mockk.*
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 class AnalysisResultEventListenerTest {
 
@@ -63,18 +64,25 @@ class AnalysisResultEventListenerTest {
 
     @Test
     fun `processes CREATE events as batch`() {
-        coEvery { articleIndexingService.indexAll(any()) } just Runs
+        coEvery { articleIndexingService.indexAll(any(), any()) } just Runs
         val record1 = ConsumerRecord("topic", 0, 0L, "key1", validPayload)
         val record2 = ConsumerRecord("topic", 0, 1L, "key2", validPayload2)
 
         listener.onAnalysisResultEvents(listOf(record1, record2))
 
         coVerify(exactly = 1) {
-            articleIndexingService.indexAll(match { results ->
-                results.size == 2 &&
-                    results[0].articleId == "2026-01-30-001" &&
-                    results[1].articleId == "2026-01-30-002"
-            })
+            articleIndexingService.indexAll(
+                match { results ->
+                    results.size == 2 &&
+                        results[0].articleId == "2026-01-30-001" &&
+                        results[1].articleId == "2026-01-30-002"
+                },
+                match { analyzedAts ->
+                    analyzedAts.size == 2 &&
+                        analyzedAts[0] == Instant.parse("2026-01-30T08:33:30Z") &&
+                        analyzedAts[1] == Instant.parse("2026-01-30T09:00:00Z")
+                }
+            )
         }
     }
 
@@ -84,7 +92,7 @@ class AnalysisResultEventListenerTest {
 
         listener.onAnalysisResultEvents(listOf(record))
 
-        coVerify(exactly = 0) { articleIndexingService.indexAll(any()) }
+        coVerify(exactly = 0) { articleIndexingService.indexAll(any(), any()) }
     }
 
     @Test
@@ -93,20 +101,21 @@ class AnalysisResultEventListenerTest {
         val badRecord = ConsumerRecord("topic", 0, 0L, "key1", badPayload)
         val goodRecord = ConsumerRecord("topic", 0, 1L, "key2", validPayload)
 
-        coEvery { articleIndexingService.indexAll(any()) } just Runs
+        coEvery { articleIndexingService.indexAll(any(), any()) } just Runs
 
         listener.onAnalysisResultEvents(listOf(badRecord, goodRecord))
 
         coVerify(exactly = 1) {
-            articleIndexingService.indexAll(match { results ->
-                results.size == 1 && results[0].articleId == "2026-01-30-001"
-            })
+            articleIndexingService.indexAll(
+                match { results -> results.size == 1 && results[0].articleId == "2026-01-30-001" },
+                any()
+            )
         }
     }
 
     @Test
     fun `handles batch indexing failure and publishes to DLQ`() {
-        coEvery { articleIndexingService.indexAll(any()) } throws RuntimeException("Batch indexing failed")
+        coEvery { articleIndexingService.indexAll(any(), any()) } throws RuntimeException("Batch indexing failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } just Runs
         val record = ConsumerRecord("topic", 0, 0L, "key", validPayload)
 
@@ -120,7 +129,7 @@ class AnalysisResultEventListenerTest {
 
     @Test
     fun `publishes each failed record to DLQ on batch failure`() {
-        coEvery { articleIndexingService.indexAll(any()) } throws RuntimeException("Batch indexing failed")
+        coEvery { articleIndexingService.indexAll(any(), any()) } throws RuntimeException("Batch indexing failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } just Runs
         val record1 = ConsumerRecord("topic", 0, 0L, "key1", validPayload)
         val record2 = ConsumerRecord("topic", 0, 1L, "key2", validPayload2)
@@ -133,7 +142,7 @@ class AnalysisResultEventListenerTest {
 
     @Test
     fun `continues publishing to DLQ even if one publish fails`() {
-        coEvery { articleIndexingService.indexAll(any()) } throws RuntimeException("Batch indexing failed")
+        coEvery { articleIndexingService.indexAll(any(), any()) } throws RuntimeException("Batch indexing failed")
         coEvery { dlqPublisher.publish(validPayload, 0, "2026-01-30-001") } throws RuntimeException("DLQ publish failed")
         coEvery { dlqPublisher.publish(validPayload2, 0, "2026-01-30-002") } just Runs
         val record1 = ConsumerRecord("topic", 0, 0L, "key1", validPayload)
@@ -152,6 +161,6 @@ class AnalysisResultEventListenerTest {
 
         listener.onAnalysisResultEvents(listOf(record))
 
-        coVerify(exactly = 0) { articleIndexingService.indexAll(any()) }
+        coVerify(exactly = 0) { articleIndexingService.indexAll(any(), any()) }
     }
 }

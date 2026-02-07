@@ -3,12 +3,14 @@ package com.vonkernel.lit.indexer.adapter.outbound.opensearch
 import com.vonkernel.lit.core.entity.*
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.opensearch.client.opensearch.OpenSearchClient
 import org.opensearch.client.opensearch.core.*
 import org.opensearch.client.opensearch._types.Result
 import org.opensearch.client.util.ObjectBuilder
+import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
@@ -108,5 +110,56 @@ class OpenSearchArticleIndexerTest {
         adapter.indexAll(emptyList())
 
         verify(exactly = 0) { openSearchClient.bulk(any<BulkRequest>()) }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    @Test
+    fun `findModifiedAtByArticleId returns instant when document exists`() = runTest {
+        val getResponse = mockk<GetResponse<Any>>()
+        every { getResponse.found() } returns true
+        every { getResponse.source() } returns mapOf("modifiedAt" to "2026-01-30T08:33:30Z")
+
+        every {
+            openSearchClient.get(
+                any<java.util.function.Function<GetRequest.Builder, ObjectBuilder<GetRequest>>>(),
+                any<Class<*>>()
+            )
+        } returns getResponse as GetResponse<Nothing>
+
+        val result = adapter.findModifiedAtByArticleId("test-001")
+
+        assertEquals(Instant.parse("2026-01-30T08:33:30Z"), result)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    @Test
+    fun `findModifiedAtByArticleId returns null when document not found`() = runTest {
+        val getResponse = mockk<GetResponse<Any>>()
+        every { getResponse.found() } returns false
+
+        every {
+            openSearchClient.get(
+                any<java.util.function.Function<GetRequest.Builder, ObjectBuilder<GetRequest>>>(),
+                any<Class<*>>()
+            )
+        } returns getResponse as GetResponse<Nothing>
+
+        val result = adapter.findModifiedAtByArticleId("nonexistent")
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `findModifiedAtByArticleId returns null when OpenSearch throws`() = runTest {
+        every {
+            openSearchClient.get(
+                any<java.util.function.Function<GetRequest.Builder, ObjectBuilder<GetRequest>>>(),
+                any<Class<*>>()
+            )
+        } throws RuntimeException("OpenSearch unavailable")
+
+        val result = adapter.findModifiedAtByArticleId("test-001")
+
+        assertNull(result)
     }
 }

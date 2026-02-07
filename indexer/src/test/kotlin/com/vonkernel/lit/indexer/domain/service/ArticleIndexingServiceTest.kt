@@ -65,9 +65,10 @@ class ArticleIndexingServiceTest {
     fun `index assembles document with embedding and indexes`() = runTest {
         val embeddingBytes = byteArrayOf(1, 2, 3, 4)
         coEvery { embedder.embed(any()) } returns embeddingBytes
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { articleIndexer.index(any()) } just Runs
 
-        service.index(sampleAnalysisResult)
+        service.index(sampleAnalysisResult, Instant.parse("2026-01-30T08:33:30Z"))
 
         coVerify {
             articleIndexer.index(match { doc ->
@@ -81,9 +82,10 @@ class ArticleIndexingServiceTest {
     @Test
     fun `index proceeds with null embedding when embedder fails`() = runTest {
         coEvery { embedder.embed(any()) } throws RuntimeException("OpenAI API error")
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { articleIndexer.index(any()) } just Runs
 
-        service.index(sampleAnalysisResult)
+        service.index(sampleAnalysisResult, Instant.parse("2026-01-30T08:33:30Z"))
 
         coVerify {
             articleIndexer.index(match { doc ->
@@ -96,10 +98,11 @@ class ArticleIndexingServiceTest {
     @Test
     fun `index throws ArticleIndexingException when searchIndexer fails`() = runTest {
         coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { articleIndexer.index(any()) } throws RuntimeException("OpenSearch connection refused")
 
         val exception = assertThrows(ArticleIndexingException::class.java) {
-            kotlinx.coroutines.runBlocking { service.index(sampleAnalysisResult) }
+            kotlinx.coroutines.runBlocking { service.index(sampleAnalysisResult, Instant.parse("2026-01-30T08:33:30Z")) }
         }
 
         assertEquals("test-article-001", exception.articleId)
@@ -107,13 +110,73 @@ class ArticleIndexingServiceTest {
     }
 
     @Test
+    fun `index skips stale event when existing document is newer`() = runTest {
+        val existingModifiedAt = Instant.parse("2026-01-30T10:00:00Z")
+        val eventAnalyzedAt = Instant.parse("2026-01-30T08:33:30Z")
+        coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns existingModifiedAt
+
+        service.index(sampleAnalysisResult, eventAnalyzedAt)
+
+        coVerify(exactly = 0) { embedder.embed(any()) }
+        coVerify(exactly = 0) { articleIndexer.index(any()) }
+    }
+
+    @Test
+    fun `index skips stale event when existing document has same timestamp`() = runTest {
+        val timestamp = Instant.parse("2026-01-30T08:33:30Z")
+        coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns timestamp
+
+        service.index(sampleAnalysisResult, timestamp)
+
+        coVerify(exactly = 0) { embedder.embed(any()) }
+        coVerify(exactly = 0) { articleIndexer.index(any()) }
+    }
+
+    @Test
+    fun `index proceeds when existing document is older`() = runTest {
+        val existingModifiedAt = Instant.parse("2026-01-30T06:00:00Z")
+        val eventAnalyzedAt = Instant.parse("2026-01-30T08:33:30Z")
+        coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns existingModifiedAt
+        coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
+        coEvery { articleIndexer.index(any()) } just Runs
+
+        service.index(sampleAnalysisResult, eventAnalyzedAt)
+
+        coVerify(exactly = 1) { articleIndexer.index(any()) }
+    }
+
+    @Test
+    fun `index proceeds without analyzedAt and skips staleness check`() = runTest {
+        coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
+        coEvery { articleIndexer.index(any()) } just Runs
+
+        service.index(sampleAnalysisResult)
+
+        coVerify(exactly = 0) { articleIndexer.findModifiedAtByArticleId(any()) }
+        coVerify(exactly = 1) { articleIndexer.index(any()) }
+    }
+
+    @Test
+    fun `index proceeds when staleness check fails`() = runTest {
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } throws RuntimeException("OpenSearch unavailable")
+        coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
+        coEvery { articleIndexer.index(any()) } just Runs
+
+        service.index(sampleAnalysisResult, Instant.parse("2026-01-30T08:33:30Z"))
+
+        coVerify(exactly = 1) { articleIndexer.index(any()) }
+    }
+
+    @Test
     fun `indexAll assembles documents with batch embeddings and indexes`() = runTest {
         val embedding1 = byteArrayOf(1, 2, 3, 4)
         val embedding2 = byteArrayOf(5, 6, 7, 8)
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { embedder.embedAll(any()) } returns listOf(embedding1, embedding2)
         coEvery { articleIndexer.indexAll(any()) } just Runs
 
-        service.indexAll(listOf(sampleAnalysisResult, sampleAnalysisResult2))
+        val analyzedAts = listOf(Instant.parse("2026-01-30T08:33:30Z"), Instant.parse("2026-01-30T09:00:00Z"))
+        service.indexAll(listOf(sampleAnalysisResult, sampleAnalysisResult2), analyzedAts)
 
         coVerify {
             articleIndexer.indexAll(match { docs ->
@@ -128,6 +191,7 @@ class ArticleIndexingServiceTest {
 
     @Test
     fun `indexAll proceeds with null embeddings when batch embedding fails`() = runTest {
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { embedder.embedAll(any()) } throws RuntimeException("OpenAI API error")
         coEvery { articleIndexer.indexAll(any()) } just Runs
 
@@ -144,12 +208,14 @@ class ArticleIndexingServiceTest {
 
     @Test
     fun `indexAll propagates exception when indexer fails`() = runTest {
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
         coEvery { embedder.embedAll(any()) } returns listOf(byteArrayOf(1, 2), byteArrayOf(3, 4))
         coEvery { articleIndexer.indexAll(any()) } throws RuntimeException("OpenSearch bulk error")
 
+        val analyzedAts = listOf(Instant.parse("2026-01-30T08:33:30Z"), Instant.parse("2026-01-30T09:00:00Z"))
         assertThrows(RuntimeException::class.java) {
             kotlinx.coroutines.runBlocking {
-                service.indexAll(listOf(sampleAnalysisResult, sampleAnalysisResult2))
+                service.indexAll(listOf(sampleAnalysisResult, sampleAnalysisResult2), analyzedAts)
             }
         }
     }
@@ -157,6 +223,36 @@ class ArticleIndexingServiceTest {
     @Test
     fun `indexAll does nothing for empty list`() = runTest {
         service.indexAll(emptyList())
+
+        coVerify(exactly = 0) { embedder.embedAll(any()) }
+        coVerify(exactly = 0) { articleIndexer.indexAll(any()) }
+    }
+
+    @Test
+    fun `indexAll filters out stale events in batch`() = runTest {
+        val existingModifiedAt = Instant.parse("2026-01-30T10:00:00Z")
+        coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns existingModifiedAt
+        coEvery { articleIndexer.findModifiedAtByArticleId("test-article-002") } returns null
+        coEvery { embedder.embedAll(any()) } returns listOf(byteArrayOf(5, 6, 7, 8))
+        coEvery { articleIndexer.indexAll(any()) } just Runs
+
+        val analyzedAts = listOf(Instant.parse("2026-01-30T08:33:30Z"), Instant.parse("2026-01-30T09:00:00Z"))
+        service.indexAll(listOf(sampleAnalysisResult, sampleAnalysisResult2), analyzedAts)
+
+        coVerify {
+            articleIndexer.indexAll(match { docs ->
+                docs.size == 1 && docs[0].articleId == "test-article-002"
+            })
+        }
+    }
+
+    @Test
+    fun `indexAll skips all when all events are stale`() = runTest {
+        coEvery { articleIndexer.findModifiedAtByArticleId("test-article-001") } returns Instant.parse("2026-01-30T10:00:00Z")
+        coEvery { articleIndexer.findModifiedAtByArticleId("test-article-002") } returns Instant.parse("2026-01-30T10:00:00Z")
+
+        val analyzedAts = listOf(Instant.parse("2026-01-30T08:33:30Z"), Instant.parse("2026-01-30T09:00:00Z"))
+        service.indexAll(listOf(sampleAnalysisResult, sampleAnalysisResult2), analyzedAts)
 
         coVerify(exactly = 0) { embedder.embedAll(any()) }
         coVerify(exactly = 0) { articleIndexer.indexAll(any()) }

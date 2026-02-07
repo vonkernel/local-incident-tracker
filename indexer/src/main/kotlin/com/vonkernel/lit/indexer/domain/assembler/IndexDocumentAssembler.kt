@@ -2,12 +2,17 @@ package com.vonkernel.lit.indexer.domain.assembler
 
 import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.core.entity.ArticleIndexDocument
+import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 object IndexDocumentAssembler {
 
-    fun assemble(analysisResult: AnalysisResult, contentEmbedding: ByteArray? = null): ArticleIndexDocument =
+    fun assemble(
+        analysisResult: AnalysisResult,
+        contentEmbedding: ByteArray? = null,
+        analyzedAt: Instant? = null,
+    ): ArticleIndexDocument =
         ZonedDateTime.ofInstant(analysisResult.refinedArticle.writtenAt, ZoneOffset.UTC)
             .let { writtenAt ->
                 ArticleIndexDocument(
@@ -26,6 +31,7 @@ object IndexDocumentAssembler {
                         .filter { it != "UNKNOWN" }
                         .toSet(),
                     writtenAt = writtenAt,
+                    modifiedAt = analyzedAt?.let { ZonedDateTime.ofInstant(it, ZoneOffset.UTC) },
                 )
             }
 }

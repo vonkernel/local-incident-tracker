@@ -11,6 +11,7 @@ import org.apache.kafka.common.header.internals.RecordHeader
 import org.apache.kafka.common.header.internals.RecordHeaders
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 class DlqEventListenerTest {
 
@@ -52,13 +53,16 @@ class DlqEventListenerTest {
 
     @Test
     fun `successfully re-indexes DLQ event`() {
-        coEvery { articleIndexingService.index(any()) } just Runs
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
         val record = createRecordWithRetryCount(validPayload, 0)
 
         listener.onDlqEvent(record)
 
         coVerify(exactly = 1) {
-            articleIndexingService.index(match { it.articleId == "2026-01-30-001" })
+            articleIndexingService.index(
+                match { it.articleId == "2026-01-30-001" },
+                eq(Instant.parse("2026-01-30T08:33:30Z"))
+            )
         }
         coVerify(exactly = 0) { dlqPublisher.publish(any(), any(), any()) }
     }
@@ -69,13 +73,13 @@ class DlqEventListenerTest {
 
         listener.onDlqEvent(record)
 
-        coVerify(exactly = 0) { articleIndexingService.index(any()) }
+        coVerify(exactly = 0) { articleIndexingService.index(any(), any()) }
         coVerify(exactly = 0) { dlqPublisher.publish(any(), any(), any()) }
     }
 
     @Test
     fun `re-publishes to DLQ with incremented retry count on failure`() {
-        coEvery { articleIndexingService.index(any()) } throws RuntimeException("Indexing failed")
+        coEvery { articleIndexingService.index(any(), any()) } throws RuntimeException("Indexing failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } just Runs
         val record = createRecordWithRetryCount(validPayload, 1)
 
@@ -92,23 +96,23 @@ class DlqEventListenerTest {
 
         listener.onDlqEvent(record)
 
-        coVerify(exactly = 0) { articleIndexingService.index(any()) }
+        coVerify(exactly = 0) { articleIndexingService.index(any(), any()) }
         coVerify(exactly = 0) { dlqPublisher.publish(any(), any(), any()) }
     }
 
     @Test
     fun `treats missing retry header as zero`() {
-        coEvery { articleIndexingService.index(any()) } just Runs
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
         val record = ConsumerRecord("topic", 0, 0L, "key", validPayload)
 
         listener.onDlqEvent(record)
 
-        coVerify(exactly = 1) { articleIndexingService.index(any()) }
+        coVerify(exactly = 1) { articleIndexingService.index(any(), any()) }
     }
 
     @Test
     fun `handles DLQ re-publish failure gracefully`() {
-        coEvery { articleIndexingService.index(any()) } throws RuntimeException("Indexing failed")
+        coEvery { articleIndexingService.index(any(), any()) } throws RuntimeException("Indexing failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } throws RuntimeException("DLQ publish failed")
         val record = createRecordWithRetryCount(validPayload, 0)
 

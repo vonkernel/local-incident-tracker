@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.stereotype.Component
+import java.time.Instant
 
 @Component
 class AnalysisResultEventListener(
@@ -20,6 +21,12 @@ class AnalysisResultEventListener(
     @param:Qualifier("debeziumObjectMapper") private val objectMapper: ObjectMapper
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    private data class ParsedRecord(
+        val rawRecord: ConsumerRecord<String, String>,
+        val analysisResult: AnalysisResult,
+        val analyzedAt: Instant?,
+    )
 
     companion object {
         private val CREATE_OPS = setOf("c", "r")
@@ -37,16 +44,21 @@ class AnalysisResultEventListener(
             .takeIf { it.isNotEmpty() }
             ?.let { parsedRecords ->
                 runBlocking {
-                    runCatching { articleIndexingService.indexAll(parsedRecords.map { it.second }) }
+                    runCatching {
+                        articleIndexingService.indexAll(
+                            parsedRecords.map { it.analysisResult },
+                            parsedRecords.map { it.analyzedAt }
+                        )
+                    }
                         .onFailure { e ->
                             log.error("Batch indexing failed: {}", e.message, e)
-                            parsedRecords.forEach { (record, result) -> publishToDlq(record, result) }
+                            parsedRecords.forEach { publishToDlq(it.rawRecord, it.analysisResult) }
                         }
                 }
             }
     }
 
-    private fun parseRecord(record: ConsumerRecord<String, String>): Pair<ConsumerRecord<String, String>, AnalysisResult>? =
+    private fun parseRecord(record: ConsumerRecord<String, String>): ParsedRecord? =
         record.value()
             ?.let { rawValue ->
                 runCatching { objectMapper.readValue(rawValue, DebeziumOutboxEnvelope::class.java) }
@@ -58,8 +70,8 @@ class AnalysisResultEventListener(
             ?.after
             ?.let { payload ->
                 payload.toAnalysisResult(objectMapper)
-                    .also { log.info("Parsed analysis result CDC event: articleId={}", it.articleId) }
-                    .let { record to it }
+                    .also { (_, result) -> log.info("Parsed analysis result CDC event: articleId={}", result.articleId) }
+                    .let { (analyzedAt, result) -> ParsedRecord(record, result, analyzedAt) }
             }
             ?: run {
                 if (record.value() == null) log.debug("Ignoring tombstone record, offset={}", record.offset())

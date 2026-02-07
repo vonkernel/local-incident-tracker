@@ -56,8 +56,9 @@ class DebeziumOutboxEventTest {
     @Test
     fun `toAnalysisResult performs double deserialization`() {
         val envelope = objectMapper.readValue(cdcEventJson, DebeziumOutboxEnvelope::class.java)
-        val analysisResult = envelope.after!!.toAnalysisResult(objectMapper)
+        val (analyzedAt, analysisResult) = envelope.after!!.toAnalysisResult(objectMapper)
 
+        assertEquals(Instant.parse("2026-01-30T08:33:30.855654Z"), analyzedAt)
         assertEquals("2026-01-30-4903", analysisResult.articleId)
         assertEquals("경부선 열차사고 재판", analysisResult.refinedArticle.title)
         assertEquals("30일 대구지법에서 재판이 열렸다.", analysisResult.refinedArticle.content)

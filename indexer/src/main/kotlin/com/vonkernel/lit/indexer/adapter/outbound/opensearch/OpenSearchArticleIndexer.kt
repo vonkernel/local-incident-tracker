@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 @Component
@@ -46,6 +47,19 @@ class OpenSearchArticleIndexer(
         documents.fold(BulkRequest.Builder()) { builder, doc ->
             builder.operations { op -> op.index { it.index(indexName).id(doc.articleId).document(toMap(doc)) } }
         }.build()
+
+    override suspend fun findModifiedAtByArticleId(articleId: String): Instant? =
+        runCatching {
+            openSearchClient.get(
+                { it.index(indexName).id(articleId).sourceIncludes("modifiedAt") },
+                Map::class.java
+            )
+        }
+            .getOrNull()
+            ?.takeIf { it.found() }
+            ?.source()
+            ?.get("modifiedAt")
+            ?.let { Instant.parse(it as String) }
 
     override suspend fun delete(articleId: String) {
         openSearchClient.delete { it.index(indexName).id(articleId) }
