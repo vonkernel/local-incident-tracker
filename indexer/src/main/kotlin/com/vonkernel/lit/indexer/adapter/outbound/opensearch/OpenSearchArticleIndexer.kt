@@ -100,7 +100,7 @@ class OpenSearchArticleIndexer(
     }
 
     private fun ByteArray.toFloatArray(): List<Float> {
-        return ByteBuffer.wrap(this).order(ByteOrder.BIG_ENDIAN)
-            .let { List(this.size / 4) { it.toFloat() } }
+        val buffer = ByteBuffer.wrap(this).order(ByteOrder.BIG_ENDIAN)
+        return List(this.size / 4) { buffer.float }
     }
 }
