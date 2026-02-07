@@ -6,6 +6,7 @@ import com.vonkernel.lit.indexer.adapter.inbound.consumer.model.DebeziumOutboxEn
 import com.vonkernel.lit.indexer.adapter.inbound.consumer.model.toAnalysisResult
 import com.vonkernel.lit.indexer.domain.port.DlqPublisher
 import com.vonkernel.lit.indexer.domain.service.ArticleIndexingService
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
@@ -14,13 +15,16 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.stereotype.Component
 import java.time.Instant
+import kotlin.math.pow
 
 @Component
 class DlqEventListener(
     private val articleIndexingService: ArticleIndexingService,
     private val dlqPublisher: DlqPublisher,
     @param:Qualifier("debeziumObjectMapper") private val objectMapper: ObjectMapper,
-    @param:Value("\${kafka.dlq.max-retries}") private val maxRetries: Int
+    @param:Value("\${kafka.dlq.max-retries}") private val maxRetries: Int,
+    @param:Value("\${kafka.dlq.base-delay-ms:2000}") private val baseDelayMs: Long = 2000L,
+    @param:Value("\${kafka.dlq.backoff-factor:2.0}") private val backoffFactor: Double = 2.0,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -48,6 +52,12 @@ class DlqEventListener(
     }
 
     private suspend fun processRecord(record: ConsumerRecord<String, String>, retryCount: Int) {
+        if (retryCount > 0) {
+            val delayMs = calculateBackoffDelay(retryCount)
+            log.info("DLQ: Applying backoff delay of {}ms for retryCount={}", delayMs, retryCount)
+            delay(delayMs)
+        }
+
         parseEnvelope(record)?.let { parsed ->
             runCatching { articleIndexingService.index(parsed.analysisResult, parsed.analyzedAt) }
                 .onSuccess { log.info("DLQ: Successfully re-indexed articleId={}, retryCount={}", parsed.articleId, retryCount) }
@@ -55,9 +65,12 @@ class DlqEventListener(
         }
     }
 
+    private fun calculateBackoffDelay(retryCount: Int): Long =
+        (baseDelayMs * backoffFactor.pow(retryCount - 1)).toLong()
+
     private suspend fun handleReindexFailure(record: ConsumerRecord<String, String>, retryCount: Int, articleId: String, e: Throwable) {
         log.error("DLQ: Failed to re-index event, offset={}, retryCount={}: {}", record.offset(), retryCount, e.message, e)
-        republishToDlq(record, retryCount + 1, articleId)
+        republishToDlqOrThrow(record, retryCount + 1, articleId)
     }
 
     private fun parseEnvelope(record: ConsumerRecord<String, String>): ParsedEnvelope? =
@@ -74,9 +87,10 @@ class DlqEventListener(
                 .getOrNull()
         }
 
-    private suspend fun republishToDlq(record: ConsumerRecord<String, String>, retryCount: Int, articleId: String) {
+    private suspend fun republishToDlqOrThrow(record: ConsumerRecord<String, String>, retryCount: Int, articleId: String) {
         runCatching { dlqPublisher.publish(record.value(), retryCount, articleId) }
             .onFailure { e -> log.error("DLQ: Failed to re-publish to DLQ, offset={}: {}", record.offset(), e.message, e) }
+            .getOrThrow()
     }
 
     private fun extractRetryCount(record: ConsumerRecord<String, String>): Int =

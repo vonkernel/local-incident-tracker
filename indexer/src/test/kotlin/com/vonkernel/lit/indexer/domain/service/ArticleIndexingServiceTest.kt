@@ -58,7 +58,7 @@ class ArticleIndexingServiceTest {
 
     @BeforeEach
     fun setUp() {
-        service = ArticleIndexingService(embedder, articleIndexer)
+        service = ArticleIndexingService(embedder, articleIndexer, maxRetries = 2, baseDelayMs = 10L)
     }
 
     @Test
@@ -256,5 +256,43 @@ class ArticleIndexingServiceTest {
 
         coVerify(exactly = 0) { embedder.embedAll(any()) }
         coVerify(exactly = 0) { articleIndexer.indexAll(any()) }
+    }
+
+    @Test
+    fun `index retries and succeeds on transient failure`() = runTest {
+        coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
+        coEvery { articleIndexer.index(any()) } throws RuntimeException("transient") andThen Unit
+
+        service.index(sampleAnalysisResult, Instant.parse("2026-01-30T08:33:30Z"))
+
+        coVerify(exactly = 2) { articleIndexer.index(any()) }
+    }
+
+    @Test
+    fun `index throws after retries exhausted`() = runTest {
+        coEvery { embedder.embed(any()) } returns byteArrayOf(1, 2, 3, 4)
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
+        coEvery { articleIndexer.index(any()) } throws RuntimeException("persistent failure")
+
+        val exception = assertThrows(ArticleIndexingException::class.java) {
+            kotlinx.coroutines.runBlocking { service.index(sampleAnalysisResult, Instant.parse("2026-01-30T08:33:30Z")) }
+        }
+
+        assertEquals("test-article-001", exception.articleId)
+        // 1 initial + 2 retries = 3 calls
+        coVerify(exactly = 3) { articleIndexer.index(any()) }
+    }
+
+    @Test
+    fun `indexAll retries and succeeds on transient failure`() = runTest {
+        coEvery { articleIndexer.findModifiedAtByArticleId(any()) } returns null
+        coEvery { embedder.embedAll(any()) } returns listOf(byteArrayOf(1, 2), byteArrayOf(3, 4))
+        coEvery { articleIndexer.indexAll(any()) } throws RuntimeException("transient") andThen Unit
+
+        val analyzedAts = listOf(Instant.parse("2026-01-30T08:33:30Z"), Instant.parse("2026-01-30T09:00:00Z"))
+        service.indexAll(listOf(sampleAnalysisResult, sampleAnalysisResult2), analyzedAts)
+
+        coVerify(exactly = 2) { articleIndexer.indexAll(any()) }
     }
 }

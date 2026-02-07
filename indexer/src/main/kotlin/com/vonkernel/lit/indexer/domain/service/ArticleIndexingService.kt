@@ -2,11 +2,13 @@ package com.vonkernel.lit.indexer.domain.service
 
 import com.vonkernel.lit.core.entity.AnalysisResult
 import com.vonkernel.lit.core.entity.ArticleIndexDocument
+import com.vonkernel.lit.core.util.executeWithRetry
 import com.vonkernel.lit.indexer.domain.assembler.IndexDocumentAssembler
 import com.vonkernel.lit.indexer.domain.exception.ArticleIndexingException
 import com.vonkernel.lit.indexer.domain.port.Embedder
 import com.vonkernel.lit.indexer.domain.port.ArticleIndexer
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -14,6 +16,8 @@ import java.time.Instant
 class ArticleIndexingService(
     private val embedder: Embedder,
     private val articleIndexer: ArticleIndexer,
+    @param:Value("\${indexing.retry.max-retries:2}") private val maxRetries: Int = 2,
+    @param:Value("\${indexing.retry.base-delay-ms:1000}") private val baseDelayMs: Long = 1000L,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -53,7 +57,15 @@ class ArticleIndexingService(
 
     // 복구 불가능한 부수효과: 이름에 throw 의도 표현
     private suspend fun indexOrThrow(document: ArticleIndexDocument) {
-        runCatching { articleIndexer.index(document) }
+        runCatching {
+            executeWithRetry(
+                maxRetries = maxRetries,
+                baseDelayMs = baseDelayMs,
+                onRetry = { attempt, delay, e ->
+                    log.warn("Retrying index for article {} (attempt={}, delay={}ms): {}", document.articleId, attempt, delay, e.message)
+                }
+            ) { articleIndexer.index(document) }
+        }
             .onSuccess { log.info("Indexed article: {}", document.articleId) }
             .getOrElse { e -> throw ArticleIndexingException(document.articleId, "Failed to index article: ${document.articleId}", e) }
     }
@@ -67,7 +79,13 @@ class ArticleIndexingService(
             }
 
     private suspend fun indexAllAndLog(documents: List<ArticleIndexDocument>, freshCount: Int, totalCount: Int) {
-        articleIndexer.indexAll(documents)
+        executeWithRetry(
+            maxRetries = maxRetries,
+            baseDelayMs = baseDelayMs,
+            onRetry = { attempt, delay, e ->
+                log.warn("Retrying batch indexing (attempt={}, delay={}ms): {}", attempt, delay, e.message)
+            }
+        ) { articleIndexer.indexAll(documents) }
         log.info("Batch indexing completed for {} articles ({} skipped as stale)", freshCount, totalCount - freshCount)
     }
 

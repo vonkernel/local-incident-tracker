@@ -1,6 +1,7 @@
 package com.vonkernel.lit.indexer.adapter.outbound.opensearch
 
 import com.vonkernel.lit.core.entity.*
+import com.vonkernel.lit.indexer.domain.exception.BulkIndexingPartialFailureException
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.*
@@ -8,6 +9,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.opensearch.client.opensearch.OpenSearchClient
 import org.opensearch.client.opensearch.core.*
+import org.opensearch.client.opensearch.core.bulk.BulkResponseItem
+import org.opensearch.client.opensearch._types.ErrorCause
 import org.opensearch.client.opensearch._types.Result
 import org.opensearch.client.util.ObjectBuilder
 import java.time.Instant
@@ -161,5 +164,43 @@ class OpenSearchArticleIndexerTest {
         val result = adapter.findModifiedAtByArticleId("test-001")
 
         assertNull(result)
+    }
+
+    @Test
+    fun `indexAll throws BulkIndexingPartialFailureException on partial failure`() = runTest {
+        val failedItem = mockk<BulkResponseItem>()
+        val errorCause = mockk<ErrorCause>()
+        every { failedItem.id() } returns "test-002"
+        every { failedItem.error() } returns errorCause
+        every { errorCause.reason() } returns "mapper_parsing_exception"
+
+        val successItem = mockk<BulkResponseItem>()
+        every { successItem.id() } returns "test-001"
+        every { successItem.error() } returns null
+
+        val bulkResponse = mockk<BulkResponse>()
+        every { bulkResponse.errors() } returns true
+        every { bulkResponse.items() } returns listOf(successItem, failedItem)
+
+        every { openSearchClient.bulk(any<BulkRequest>()) } returns bulkResponse
+
+        val exception = assertThrows(BulkIndexingPartialFailureException::class.java) {
+            kotlinx.coroutines.runBlocking { adapter.indexAll(listOf(sampleDocument, sampleDocument2)) }
+        }
+
+        assertEquals(listOf("test-002"), exception.failedArticleIds)
+        assertTrue(exception.message!!.contains("1/2"))
+    }
+
+    @Test
+    fun `indexAll succeeds when bulk response has no errors`() = runTest {
+        val bulkResponse = mockk<BulkResponse>()
+        every { bulkResponse.errors() } returns false
+
+        every { openSearchClient.bulk(any<BulkRequest>()) } returns bulkResponse
+
+        adapter.indexAll(listOf(sampleDocument, sampleDocument2))
+
+        verify { openSearchClient.bulk(any<BulkRequest>()) }
     }
 }

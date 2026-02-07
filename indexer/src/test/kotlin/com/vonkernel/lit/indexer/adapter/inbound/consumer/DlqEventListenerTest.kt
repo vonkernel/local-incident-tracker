@@ -6,9 +6,11 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.vonkernel.lit.indexer.domain.port.DlqPublisher
 import com.vonkernel.lit.indexer.domain.service.ArticleIndexingService
 import io.mockk.*
+import kotlinx.coroutines.test.runTest
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
 import org.apache.kafka.common.header.internals.RecordHeaders
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -48,7 +50,10 @@ class DlqEventListenerTest {
 
     @BeforeEach
     fun setUp() {
-        listener = DlqEventListener(articleIndexingService, dlqPublisher, objectMapper, maxRetries)
+        listener = DlqEventListener(
+            articleIndexingService, dlqPublisher, objectMapper,
+            maxRetries = maxRetries, baseDelayMs = 10L, backoffFactor = 2.0
+        )
     }
 
     @Test
@@ -111,15 +116,37 @@ class DlqEventListenerTest {
     }
 
     @Test
-    fun `handles DLQ re-publish failure gracefully`() {
+    fun `DLQ re-publish failure throws to prevent offset commit`() {
         coEvery { articleIndexingService.index(any(), any()) } throws RuntimeException("Indexing failed")
         coEvery { dlqPublisher.publish(any(), any(), any()) } throws RuntimeException("DLQ publish failed")
         val record = createRecordWithRetryCount(validPayload, 0)
 
-        // Should not throw
-        listener.onDlqEvent(record)
+        assertThrows(RuntimeException::class.java) {
+            listener.onDlqEvent(record)
+        }
 
         coVerify(exactly = 1) { dlqPublisher.publish(validPayload, 1, "2026-01-30-001") }
+    }
+
+    @Test
+    fun `applies backoff delay for retry count greater than zero`() = runTest {
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
+        val record = createRecordWithRetryCount(validPayload, 2)
+
+        listener.onDlqEvent(record)
+
+        // With baseDelay=10ms and factor=2.0, retryCount=2 → delay = 10 * 2^(2-1) = 20ms
+        coVerify(exactly = 1) { articleIndexingService.index(any(), any()) }
+    }
+
+    @Test
+    fun `no backoff delay for retry count zero`() {
+        coEvery { articleIndexingService.index(any(), any()) } just Runs
+        val record = createRecordWithRetryCount(validPayload, 0)
+
+        listener.onDlqEvent(record)
+
+        coVerify(exactly = 1) { articleIndexingService.index(any(), any()) }
     }
 
     private fun createRecordWithRetryCount(value: String, retryCount: Int): ConsumerRecord<String, String> {

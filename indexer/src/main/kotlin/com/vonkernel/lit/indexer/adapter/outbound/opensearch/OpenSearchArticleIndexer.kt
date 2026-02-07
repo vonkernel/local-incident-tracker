@@ -1,12 +1,14 @@
 package com.vonkernel.lit.indexer.adapter.outbound.opensearch
 
 import com.vonkernel.lit.core.entity.ArticleIndexDocument
+import com.vonkernel.lit.indexer.domain.exception.BulkIndexingPartialFailureException
 import com.vonkernel.lit.indexer.domain.port.ArticleIndexer
 import org.opensearch.client.opensearch.OpenSearchClient
 import org.opensearch.client.opensearch.core.BulkRequest
 import org.opensearch.client.opensearch.core.BulkResponse
 import org.opensearch.client.opensearch.core.GetResponse
 import org.opensearch.client.opensearch.core.IndexRequest
+import org.opensearch.client.opensearch.core.bulk.BulkResponseItem
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -37,7 +39,7 @@ class OpenSearchArticleIndexer(
         documents.takeIf { it.isNotEmpty() }
             ?.let { buildBulkRequest(it) }
             ?.let { openSearchClient.bulk(it) }
-            ?.also { logBulkResult(it, documents.size) }
+            ?.also { throwOnPartialFailure(it, documents.size) }
     }
 
     private fun buildBulkRequest(documents: List<ArticleIndexDocument>): BulkRequest =
@@ -45,11 +47,27 @@ class OpenSearchArticleIndexer(
             builder.operations { op -> op.index { it.index(indexName).id(doc.articleId).document(toMap(doc)) } }
         }.build()
 
-    private fun logBulkResult(response: BulkResponse, count: Int) {
+    private fun throwOnPartialFailure(response: BulkResponse, count: Int) {
+        if (!response.errors()) {
+            log.info("Bulk indexed {} documents successfully", count)
+            return
+        }
+
         response.items()
             .filter { it.error() != null }
-            .forEach { log.error("Failed to bulk index document {}: {}", it.id(), it.error()?.reason()) }
-        log.info("Bulk indexed {} documents, errors: {}", count, response.errors())
+            .also { logBulkFailures(it) }
+            .mapNotNull { it.id() }
+            .let { failedIds ->
+                throw BulkIndexingPartialFailureException(
+                    failedArticleIds = failedIds,
+                    message = "Bulk indexing partially failed: ${failedIds.size}/$count documents failed, failedIds=$failedIds"
+                )
+            }
+    }
+
+    // 복구 불가능한 부수효과: 실패 건 로깅
+    private fun logBulkFailures(failedItems: List<BulkResponseItem>) {
+        failedItems.forEach { log.error("Failed to bulk index document {}: {}", it.id(), it.error()?.reason()) }
     }
 
     override suspend fun findModifiedAtByArticleId(articleId: String): Instant? =
