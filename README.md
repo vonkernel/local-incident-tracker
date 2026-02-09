@@ -21,7 +21,7 @@
 **데이터 흐름:**
 
 ```mermaid
-flowchart TD
+flowchart LR
 
     subgraph Command [Command Model]
         ODC[Original Data Collector]
