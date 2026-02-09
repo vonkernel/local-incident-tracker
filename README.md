@@ -23,10 +23,20 @@
 ```mermaid
 flowchart TD
 
-    ODC[Original Data Collector]
+    subgraph Command [Command Model]
+        ODC[Original Data Collector]
+        DA[Data Analyzer]
+    end
+
+    subgraph Query [Query Model]
+        IDX[Indexer]
+        SRCH[Searcher]
+    end
+
     RDBMS[(RDBMS)]
     CDC[CDC Platform]
-    
+    SE[(Search Engine)]
+
     subgraph Storage [Database Tables]
         articles[articles]
         subgraph Analysis_Tables [Analysis Results]
@@ -36,16 +46,11 @@ flowchart TD
             AK[article keywords]
         end
     end
-    
+
     subgraph Queues [Message Queues]
         AnaQ[Analysis CDC Queue]
         ArtQ[Article CDC Queue]
     end
-    
-    DA[Data Analyzer]
-    IDX[Indexer]
-    SE[(Search Engine)]
-    SRCH[Searcher]
 
     %% Flow connections
     ODC -- "1. Write" --> RDBMS
@@ -60,6 +65,9 @@ flowchart TD
     AnaQ -- "10. Consume" --> IDX
     IDX -- "11. Index" --> SE
     SRCH -- "12. Search" --> SE
+
+    classDef app fill:#616161,stroke:#212121,color:#fff
+    class ODC,DA,IDX,SRCH app
 ```
 
 ### 주요 컴포넌트
@@ -145,6 +153,38 @@ local-incident-tracker/
 | **indexer** | 분석 결과 OpenSearch 색인 ([README](./indexer/README.md))                    |
 | **searcher** | 검색 REST API ([README](./searcher/README.md))                           |
 | **infrastructure** | Docker Compose, Debezium CDC 설정 ([README](./infrastructure/README.md)) |
+
+### 모듈 의존 관계
+
+```mermaid
+flowchart BT
+    subgraph Libraries [라이브러리 모듈]
+        ai-core[ai-core]
+        shared[shared]
+        persistence[persistence]
+    end
+
+    subgraph Applications [애플리케이션 모듈]
+        collector[collector]
+        analyzer[analyzer]
+        indexer[indexer]
+        searcher[searcher]
+    end
+
+    persistence -->|도메인 모델| shared
+    collector -->|도메인 모델| shared
+    collector -->|영속성 모델| persistence
+    analyzer -->|도메인 모델| shared
+    analyzer -->|프롬프트 실행| ai-core
+    analyzer -->|영속성 모델| persistence
+    indexer -->|도메인 모델| shared
+    indexer -->|임베딩| ai-core
+    searcher -->|도메인 모델| shared
+    searcher -->|임베딩| ai-core
+
+    classDef app fill:#616161,stroke:#212121,color:#fff
+    class collector,analyzer,indexer,searcher app
+```
 
 ## 제공 기능
 
