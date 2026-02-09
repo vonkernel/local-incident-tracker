@@ -25,8 +25,8 @@ Analyzer가 분석 결과를 저장할 때, `AnalysisResultEntity`와 `AnalysisR
 
 ```mermaid
 flowchart LR
-    A[Analyzer] -->|@Transactional| B[(AnalysisResult)]
-    A -->|@Transactional| C[(Outbox)]
+    A[Analyzer] -->|"@Transactional"| B[(AnalysisResult)]
+    A -->|"@Transactional"| C[(Outbox)]
     C -->|CDC| D[Kafka]
 ```
 
