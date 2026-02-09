@@ -119,6 +119,28 @@ indexer 서비스 소비
 - **Kafka UI**: http://localhost:18080 — 토픽 조회, 메시지 확인, 커넥터 관리, 컨슈머 그룹 모니터링
 - **OpenSearch Dashboards**: http://localhost:5601 — 인덱스 관리, 데이터 탐색, 쿼리 실행
 
+### 커넥터 리스타트
+
+Connector나 Task가 FAILED 상태일 때, 간단한 재시작으로 복구를 시도합니다.
+
+```bash
+# 전체 리스타트
+./scripts/debezium/restart-connectors.sh
+
+# 개별 리스타트
+./scripts/debezium/restart-articles-connector.sh
+./scripts/debezium/restart-analysis-connector.sh
+```
+
+**리스타트로 해결 가능한 경우**:
+- 일시적인 네트워크 문제
+- PostgreSQL 연결 끊김 후 복구
+- Kafka 브로커 재시작 후 재연결
+
+**리스타트로 해결 불가능한 경우** (아래 삭제 및 재등록 필요):
+- Publication/Slot 불일치
+- WAL 위치 유실 (`change stream is no longer available`)
+
 ### 커넥터 삭제 및 재등록
 
 Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처음부터 다시 구성해야 할 때 사용합니다.
@@ -229,12 +251,15 @@ scripts/
 │   ├── delete-indexer-dlq-topic.sh    # indexer DLQ 토픽 + consumer group 삭제
 │   └── status.sh                      # 토픽/consumer group 상태 조회
 ├── debezium/
-│   ├── delete-connectors.sh           # 전체 커넥터 삭제 (커넥터 + publication + slot)
-│   ├── delete-articles-connector.sh   # articles 커넥터 삭제
-│   ├── delete-analysis-connector.sh   # analysis 커넥터 삭제
 │   ├── setup-connectors.sh            # 전체 커넥터 등록
 │   ├── setup-articles-connector.sh    # articles 커넥터 등록
 │   ├── setup-analysis-connector.sh    # analysis 커넥터 등록
+│   ├── restart-connectors.sh          # 전체 커넥터 리스타트
+│   ├── restart-articles-connector.sh  # articles 커넥터 리스타트
+│   ├── restart-analysis-connector.sh  # analysis 커넥터 리스타트
+│   ├── delete-connectors.sh           # 전체 커넥터 삭제 (커넥터 + publication + slot)
+│   ├── delete-articles-connector.sh   # articles 커넥터 삭제
+│   ├── delete-analysis-connector.sh   # analysis 커넥터 삭제
 │   └── status.sh                      # 커넥터 + replication slot + publication 상태 조회
 └── reset-all.sh                       # 전체 시스템 초기화 오케스트레이션
 ```
