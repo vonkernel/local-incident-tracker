@@ -261,6 +261,8 @@ scripts/
 │   ├── delete-articles-connector.sh   # articles 커넥터 삭제
 │   ├── delete-analysis-connector.sh   # analysis 커넥터 삭제
 │   └── status.sh                      # 커넥터 + replication slot + publication 상태 조회
+├── opensearch/
+│   └── create-index.sh                # 인덱스 + 검색 파이프라인 생성
 └── reset-all.sh                       # 전체 시스템 초기화 오케스트레이션
 ```
 
@@ -268,6 +270,7 @@ scripts/
 - `db/`: PostgreSQL 스키마 관리
 - `kafka/`: Kafka 토픽, consumer group, `debezium_connect_offsets` tombstone 관리
 - `debezium/`: Debezium REST API + PostgreSQL publication/replication slot 관리
+- `opensearch/`: OpenSearch 인덱스 및 검색 파이프라인 관리
 - `reset-all.sh`: 위 스크립트들을 순차 호출하여 전체 시스템 초기화
 
 ## CDC 내부 구조 (Publication & Replication Slot)
