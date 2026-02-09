@@ -55,14 +55,32 @@ PostgreSQL CDC를 활성화하고 Kafka 토픽을 생성하기 위해 connector�
 - `lit-articles-connector`: article 테이블 CDC → `lit.public.article` 토픽
 - `lit-analysis-connector`: analysis_result_outbox 테이블 CDC → `lit.public.analysis_result_outbox` 토픽
 
-### 3. 확인
+### 3. OpenSearch 인덱스 생성
+
+indexer 서비스가 색인할 인덱스와 하이브리드 검색 파이프라인을 생성합니다:
+
+```bash
+./scripts/opensearch/create-index.sh
+```
+
+**생성되는 리소스**:
+- `articles` 인덱스: Nori 분석기 + kNN 벡터 필드 매핑
+- `hybrid-search-pipeline`: BM25 + kNN 점수 정규화 파이프라인
+
+### 4. 확인
 
 ```bash
 ./scripts/debezium/status.sh
 ./scripts/kafka/status.sh
+
+# OpenSearch 인덱스 확인
+curl -s "http://localhost:9200/_cat/indices?v"
+curl -s "http://localhost:9200/_search/pipeline/hybrid-search-pipeline" | jq
 ```
 
-또는 Kafka UI 접속: http://localhost:18080
+**웹 인터페이스**:
+- Kafka UI: http://localhost:18080
+- OpenSearch Dashboards: http://localhost:5601
 
 ## 데이터 플로우
 
@@ -179,6 +197,20 @@ Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처
 - Connector 삭제 전 slot 삭제 시도 → `replication slot is active` 에러
 - Kafka offset 토픽을 남긴 채 slot만 삭제 → `change stream is no longer available` 에러
 
+### OpenSearch 인덱스 재생성
+
+인덱스 매핑 변경이나 데이터 초기화가 필요한 경우:
+
+```bash
+./scripts/opensearch/delete-index.sh    # 인덱스 + 파이프라인 삭제
+./scripts/opensearch/create-index.sh    # 인덱스 + 파이프라인 생성
+```
+
+**필요한 경우**:
+- 인덱스 매핑 변경 (필드 추가, 타입 변경 등)
+- 검색 파이프라인 설정 변경
+- 색인 데이터 전체 초기화
+
 ### 전체 시스템 초기화
 
 DB 스키마까지 포함한 완전 초기화가 필요한 경우:
@@ -190,9 +222,11 @@ DB 스키마까지 포함한 완전 초기화가 필요한 경우:
 실행 순서:
 1. `debezium/delete-connectors.sh` — 커넥터 제거 (DB 안전 DROP을 위해 먼저 실행)
 2. `kafka/delete-topics.sh` — 토픽 + consumer group + offset 삭제
-3. `db/drop-all.sh` — DB 전체 스키마 DROP
-4. `db/migrate.sh` — Flyway로 테이블 재생성
-5. `debezium/setup-connectors.sh` — 커넥터 재등록
+3. `opensearch/delete-index.sh` — 인덱스 + 검색 파이프라인 삭제
+4. `db/drop-all.sh` — DB 전체 스키마 DROP
+5. `db/migrate.sh` — Flyway로 테이블 재생성
+6. `opensearch/create-index.sh` — 인덱스 + 검색 파이프라인 생성
+7. `debezium/setup-connectors.sh` — 커넥터 재등록
 
 ### 서비스 재시작
 
@@ -200,6 +234,7 @@ DB 스키마까지 포함한 완전 초기화가 필요한 경우:
 ```bash
 docker-compose down -v
 docker-compose up -d
+./scripts/opensearch/create-index.sh
 ./scripts/debezium/setup-connectors.sh
 ```
 
@@ -262,7 +297,8 @@ scripts/
 │   ├── delete-analysis-connector.sh   # analysis 커넥터 삭제
 │   └── status.sh                      # 커넥터 + replication slot + publication 상태 조회
 ├── opensearch/
-│   └── create-index.sh                # 인덱스 + 검색 파이프라인 생성
+│   ├── create-index.sh                # 인덱스 + 검색 파이프라인 생성
+│   └── delete-index.sh                # 인덱스 + 검색 파이프라인 삭제
 └── reset-all.sh                       # 전체 시스템 초기화 오케스트레이션
 ```
 
