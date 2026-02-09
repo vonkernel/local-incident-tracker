@@ -188,24 +188,65 @@ indexer/
 ## 데이터 흐름
 
 ```mermaid
-flowchart TD
-    A[(PostgreSQL<br/>analysis_result_outbox)] -->|Debezium CDC| B[Kafka<br/>lit.public.analysis_result_outbox]
-    B --> C[AnalysisResultEventListener]
-    C --> D[ArticleIndexingService]
-    D --> E[배치 임베딩 생성]
-    E --> F[문서 변환]
-    F --> G[(OpenSearch)]
-    C -->|인덱싱 실패| H[DLQ 토픽]
-    H --> I[DlqEventListener]
-    I -->|재시도| D
+flowchart LR
+    subgraph PostgreSQL
+        outbox[(analysis_result_outbox)]
+    end
+
+    subgraph Kafka
+        outbox_topic[lit.public.analysis_result_outbox]
+        dlq_topic[lit.indexer.analysis-events.dlq]
+    end
+
+    subgraph Input [input]
+        direction TB
+        Listener[AnalysisResultEventListener]
+        DlqListener[DlqEventListener]
+        Listener ~~~ DlqListener
+    end
+
+    subgraph Indexer [indexer]
+        Service[ArticleIndexingService]
+        Embedder[Embedder]
+        Assembler[IndexDocumentAssembler]
+        ArticleIndexer[ArticleIndexer]
+    end
+
+    Debezium[Debezium]
+    OpenSearch[(OpenSearch)]
+    
+    Kafka ~~~ Debezium
+
+    Debezium -->|1. 변경 감지| outbox
+    Debezium -->|2. 이벤트 발행| outbox_topic
+    Listener -->|1. 이벤트 소비| outbox_topic
+    Listener -->|2. 인덱싱 요청| Service
+    Listener -->|3. 실패 시 발행| dlq_topic
+    Service -->|1. 임베딩 요청| Embedder
+    Service -->|2. 문서 조립 요청| Assembler
+    Service -->|3. 색인 요청| ArticleIndexer
+    ArticleIndexer -->|bulk 색인| OpenSearch
+    DlqListener -->|1. 재시도 소비| dlq_topic
+    DlqListener -->|2. 재인덱싱 요청| Service
+
+    classDef app fill:#616161,stroke:#212121,color:#fff
+    class Listener,DlqListener,Service,Embedder,Assembler,ArticleIndexer app
 ```
 
-**인덱싱 파이프라인 단계**:
-1. **이벤트 수신**: Kafka에서 분석 결과 CDC 이벤트 배치 소비
-2. **역직렬화**: Debezium Envelope → OutboxPayload → AnalysisResult (이중 역직렬화)
-3. **임베딩 생성**: 배치 내 모든 content에 대해 한 번의 API 호출로 임베딩 생성
-4. **문서 변환**: AnalysisResult + embedding → ArticleIndexDocument
-5. **색인**: OpenSearch bulk API로 일괄 색인
+**정상 흐름**:
+1. **변경 감지**: `Debezium`이 `analysis_result_outbox` 테이블 변경 감지
+2. **이벤트 발행**: Debezium이 `lit.public.analysis_result_outbox` 토픽에 이벤트 발행
+3. **이벤트 소비**: `AnalysisResultEventListener`가 토픽에서 배치 소비
+4. **이중 역직렬화**: Listener가 Debezium Envelope → OutboxPayload → AnalysisResult 변환
+5. **인덱싱 요청**: Listener가 `ArticleIndexingService`에 인덱싱 요청
+6. **임베딩 생성**: Service가 `Embedder`에 배치 임베딩 요청 (한 번의 API 호출)
+7. **문서 조립**: Service가 `IndexDocumentAssembler`에 AnalysisResult + embedding → ArticleIndexDocument 변환 요청
+8. **색인**: Service가 `ArticleIndexer`에 색인 요청 → OpenSearch bulk API로 일괄 색인
+
+**실패 흐름 (DLQ)**:
+1. **실패 발행**: 인덱싱 실패 시 `AnalysisResultEventListener`가 `lit.indexer.analysis-events.dlq` 토픽에 발행
+2. **재시도 소비**: `DlqEventListener`가 DLQ 토픽에서 단건 소비
+3. **재인덱싱 요청**: DlqEventListener가 `ArticleIndexingService`에 재인덱싱 요청 (최대 3회)
 
 ## 핵심 컴포넌트
 

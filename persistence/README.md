@@ -25,16 +25,16 @@ Analyzer가 분석 결과를 저장할 때, `AnalysisResultEntity`와 `AnalysisR
 
 ```mermaid
 flowchart LR
-    A[Analyzer] -->|@Transactional| B[(AnalysisResult)]
-    A -->|@Transactional| C[(Outbox)]
+    A[Analyzer] -->|"@Transactional"| B[(AnalysisResult)]
+    A -->|"@Transactional"| C[(Outbox)]
     C -->|CDC| D[Kafka]
 ```
 
 이 패턴으로 **At-least-once delivery**를 보장하며, 분석 결과 저장과 이벤트 발행의 원자성을 확보한다.
 
-### 양방향 관계 설정
+### 연관관계 편의 메서드
 
-JPA의 양방향 관계에서 발생하는 일관성 문제를 해결하기 위해, 엔티티에 `setup*()` 메서드를 정의한다. 이 메서드가 부모-자식 관계를 일괄 설정하여 관계 누락을 방지한다.
+JPA의 양방향 관계에서 발생하는 일관성 문제를 해결하기 위해, 엔티티에 연관관계 편의 메서드(`setup*()`)를 정의한다. 이 메서드가 부모-자식 관계를 일괄 설정하여 관계 누락을 방지한다.
 
 ## 모듈 구조
 

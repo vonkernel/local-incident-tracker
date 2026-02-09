@@ -93,15 +93,40 @@ collector/
 ## 데이터 흐름
 
 ```mermaid
-flowchart TD
-    A[Safety Data API] -->|HTTP GET| B[SafetyDataApiAdapter]
-    B -->|YonhapnewsArticle| C[YonhapnewsArticleMapper]
-    C -->|Article 정규화| D[ArticleCollectionService]
-    D -->|validate| E[ArticleValidator]
-    D -->|filterNonExisting| F[ArticleRepository]
-    F -->|saveAll| G[(PostgreSQL)]
-    G -->|CDC| H[Kafka: lit.public.article]
-    H --> I[analyzer]
+flowchart LR
+    subgraph Trigger [트리거]
+        Scheduler[Scheduler]
+        Controller[Controller]
+    end
+
+    subgraph Collector [collector]
+        Service[ArticleCollectionService]
+        Fetcher[SafetyDataApiAdapter]
+        Mapper[ArticleMapper]
+        Validator[ArticleValidator]
+    end
+
+    API[Safety Data API]
+    Repo[ArticleRepository]
+    DB[(PostgreSQL)]
+    CDC[Debezium]
+    Kafka[Kafka]
+    Analyzer[analyzer]
+
+    Scheduler -->|10분 주기| Service
+    Controller -->|backfill 요청| Service
+    Service -->|수집 요청| Fetcher
+    Fetcher -->|HTTP 호출| API
+    Fetcher -->|응답 변환| Mapper
+    Service -->|검증 요청| Validator
+    Service -->|저장 요청| Repo
+    Repo -->|INSERT| DB
+    CDC -->|변경 감지| DB
+    CDC -->|이벤트 발행| Kafka
+    Analyzer -->|이벤트 소비| Kafka
+
+    classDef trigger fill:#616161,stroke:#212121,color:#fff
+    class Scheduler,Controller trigger
 ```
 
 **수집 파이프라인 4단계**:
@@ -172,8 +197,8 @@ Content-Type: application/json
 |------|:----:|--------|------|
 | `SAFETY_DATA_API_KEY` | O | - | Safety Data API 인증 키 |
 | `DB_URL` | - | `jdbc:postgresql://localhost:5432/lit_maindb` | PostgreSQL URL |
-| `DB_USERNAME` | - | `postgres` | DB 사용자 |
-| `DB_PASSWORD` | - | `postgres` | DB 비밀번호 |
+| `DB_USERNAME` | - | `lit` | DB 사용자 |
+| `DB_PASSWORD` | - | `lit@2006` | DB 비밀번호 |
 | `SERVER_PORT` | - | `8081` | 서버 포트 |
 
 ### 설정 파일

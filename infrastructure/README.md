@@ -18,8 +18,8 @@ Local 개발 환경을 위한 인프라 구성 (PostgreSQL, Kafka, Debezium, Kaf
 `.env` 파일에서 DB 접속 정보와 서비스 포트를 관리합니다. `docker-compose.yml`과 모든 스크립트가 이 파일을 공유합니다.
 
 ```
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+POSTGRES_USER=lit
+POSTGRES_PASSWORD=lit@2006
 POSTGRES_DB=lit_maindb
 DB_CONTAINER=lit-maindb
 DEBEZIUM_PORT=18083
@@ -55,14 +55,32 @@ PostgreSQL CDC를 활성화하고 Kafka 토픽을 생성하기 위해 connector�
 - `lit-articles-connector`: article 테이블 CDC → `lit.public.article` 토픽
 - `lit-analysis-connector`: analysis_result_outbox 테이블 CDC → `lit.public.analysis_result_outbox` 토픽
 
-### 3. 확인
+### 3. OpenSearch 인덱스 생성
+
+indexer 서비스가 색인할 인덱스와 하이브리드 검색 파이프라인을 생성합니다:
+
+```bash
+./scripts/opensearch/create-index.sh
+```
+
+**생성되는 리소스**:
+- `articles` 인덱스: Nori 분석기 + kNN 벡터 필드 매핑
+- `hybrid-search-pipeline`: BM25 + kNN 점수 정규화 파이프라인
+
+### 4. 확인
 
 ```bash
 ./scripts/debezium/status.sh
 ./scripts/kafka/status.sh
+
+# OpenSearch 인덱스 확인
+curl -s "http://localhost:9200/_cat/indices?v"
+curl -s "http://localhost:9200/_search/pipeline/hybrid-search-pipeline" | jq
 ```
 
-또는 Kafka UI 접속: http://localhost:18080
+**웹 인터페이스**:
+- Kafka UI: http://localhost:18080
+- OpenSearch Dashboards: http://localhost:5601
 
 ## 데이터 플로우
 
@@ -119,6 +137,28 @@ indexer 서비스 소비
 - **Kafka UI**: http://localhost:18080 — 토픽 조회, 메시지 확인, 커넥터 관리, 컨슈머 그룹 모니터링
 - **OpenSearch Dashboards**: http://localhost:5601 — 인덱스 관리, 데이터 탐색, 쿼리 실행
 
+### 커넥터 리스타트
+
+Connector나 Task가 FAILED 상태일 때, 간단한 재시작으로 복구를 시도합니다.
+
+```bash
+# 전체 리스타트
+./scripts/debezium/restart-connectors.sh
+
+# 개별 리스타트
+./scripts/debezium/restart-articles-connector.sh
+./scripts/debezium/restart-analysis-connector.sh
+```
+
+**리스타트로 해결 가능한 경우**:
+- 일시적인 네트워크 문제
+- PostgreSQL 연결 끊김 후 복구
+- Kafka 브로커 재시작 후 재연결
+
+**리스타트로 해결 불가능한 경우** (아래 삭제 및 재등록 필요):
+- Publication/Slot 불일치
+- WAL 위치 유실 (`change stream is no longer available`)
+
 ### 커넥터 삭제 및 재등록
 
 Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처음부터 다시 구성해야 할 때 사용합니다.
@@ -157,6 +197,20 @@ Connector 설정을 변경하거나, CDC 파이프라인에 문제가 생겨 처
 - Connector 삭제 전 slot 삭제 시도 → `replication slot is active` 에러
 - Kafka offset 토픽을 남긴 채 slot만 삭제 → `change stream is no longer available` 에러
 
+### OpenSearch 인덱스 재생성
+
+인덱스 매핑 변경이나 데이터 초기화가 필요한 경우:
+
+```bash
+./scripts/opensearch/delete-index.sh    # 인덱스 + 파이프라인 삭제
+./scripts/opensearch/create-index.sh    # 인덱스 + 파이프라인 생성
+```
+
+**필요한 경우**:
+- 인덱스 매핑 변경 (필드 추가, 타입 변경 등)
+- 검색 파이프라인 설정 변경
+- 색인 데이터 전체 초기화
+
 ### 전체 시스템 초기화
 
 DB 스키마까지 포함한 완전 초기화가 필요한 경우:
@@ -168,9 +222,11 @@ DB 스키마까지 포함한 완전 초기화가 필요한 경우:
 실행 순서:
 1. `debezium/delete-connectors.sh` — 커넥터 제거 (DB 안전 DROP을 위해 먼저 실행)
 2. `kafka/delete-topics.sh` — 토픽 + consumer group + offset 삭제
-3. `db/drop-all.sh` — DB 전체 스키마 DROP
-4. `db/migrate.sh` — Flyway로 테이블 재생성
-5. `debezium/setup-connectors.sh` — 커넥터 재등록
+3. `opensearch/delete-index.sh` — 인덱스 + 검색 파이프라인 삭제
+4. `db/drop-all.sh` — DB 전체 스키마 DROP
+5. `db/migrate.sh` — Flyway로 테이블 재생성
+6. `opensearch/create-index.sh` — 인덱스 + 검색 파이프라인 생성
+7. `debezium/setup-connectors.sh` — 커넥터 재등록
 
 ### 서비스 재시작
 
@@ -178,6 +234,7 @@ DB 스키마까지 포함한 완전 초기화가 필요한 경우:
 ```bash
 docker-compose down -v
 docker-compose up -d
+./scripts/opensearch/create-index.sh
 ./scripts/debezium/setup-connectors.sh
 ```
 
@@ -229,13 +286,19 @@ scripts/
 │   ├── delete-indexer-dlq-topic.sh    # indexer DLQ 토픽 + consumer group 삭제
 │   └── status.sh                      # 토픽/consumer group 상태 조회
 ├── debezium/
-│   ├── delete-connectors.sh           # 전체 커넥터 삭제 (커넥터 + publication + slot)
-│   ├── delete-articles-connector.sh   # articles 커넥터 삭제
-│   ├── delete-analysis-connector.sh   # analysis 커넥터 삭제
 │   ├── setup-connectors.sh            # 전체 커넥터 등록
 │   ├── setup-articles-connector.sh    # articles 커넥터 등록
 │   ├── setup-analysis-connector.sh    # analysis 커넥터 등록
+│   ├── restart-connectors.sh          # 전체 커넥터 리스타트
+│   ├── restart-articles-connector.sh  # articles 커넥터 리스타트
+│   ├── restart-analysis-connector.sh  # analysis 커넥터 리스타트
+│   ├── delete-connectors.sh           # 전체 커넥터 삭제 (커넥터 + publication + slot)
+│   ├── delete-articles-connector.sh   # articles 커넥터 삭제
+│   ├── delete-analysis-connector.sh   # analysis 커넥터 삭제
 │   └── status.sh                      # 커넥터 + replication slot + publication 상태 조회
+├── opensearch/
+│   ├── create-index.sh                # 인덱스 + 검색 파이프라인 생성
+│   └── delete-index.sh                # 인덱스 + 검색 파이프라인 삭제
 └── reset-all.sh                       # 전체 시스템 초기화 오케스트레이션
 ```
 
@@ -243,6 +306,7 @@ scripts/
 - `db/`: PostgreSQL 스키마 관리
 - `kafka/`: Kafka 토픽, consumer group, `debezium_connect_offsets` tombstone 관리
 - `debezium/`: Debezium REST API + PostgreSQL publication/replication slot 관리
+- `opensearch/`: OpenSearch 인덱스 및 검색 파이프라인 관리
 - `reset-all.sh`: 위 스크립트들을 순차 호출하여 전체 시스템 초기화
 
 ## CDC 내부 구조 (Publication & Replication Slot)
@@ -331,7 +395,7 @@ Debezium은 Kafka의 `debezium_connect_offsets` 토픽에도 현재 읽고 있�
 
 3. PostgreSQL WAL 설정 확인:
    ```bash
-   docker exec lit-maindb psql -U postgres -d lit_maindb -c "SHOW wal_level;"
+   docker exec lit-maindb psql -U lit -d lit_maindb -c "SHOW wal_level;"
    ```
    → `logical`이어야 함
 

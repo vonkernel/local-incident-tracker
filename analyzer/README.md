@@ -193,26 +193,61 @@ analyzer/
 ## 데이터 흐름
 
 ```mermaid
-flowchart TD
-    A[(PostgreSQL<br/>articles)] -->|Debezium CDC| B[Kafka<br/>lit.public.article]
-    B --> C[ArticleEventListener]
-    C --> D[ArticleAnalysisService]
-    D --> E[Phase 1: 기사 정제]
-    E --> F[Phase 2: 5개 병렬 분석]
-    F --> G[(PostgreSQL<br/>analysis_result +<br/>analysis_result_outbox)]
-    G -->|Debezium CDC<br/>outbox 테이블| H[Kafka<br/>lit.public.analysis_result_outbox]
-    H --> I[indexer]
-    C -->|분석 실패| J[DLQ 토픽]
-    J --> K[DlqEventListener]
-    K -->|재시도| D
+flowchart LR
+    subgraph PostgreSQL
+        analysis_result[(analysis_result)]
+    end
+
+    subgraph Kafka
+        article_topic[lit.public.article]
+        outbox_topic[lit.public.analysis_result_outbox]
+        dlq_topic[lit.analyzer.article-events.dlq]
+    end
+
+    subgraph Input [input]
+        Listener[ArticleEventListener]
+        DlqListener[DlqEventListener]
+    end
+
+    subgraph Analyzer [analyzer]
+        Service[ArticleAnalysisService]
+        Refiner[ArticleRefiner]
+        Extractors[5개 Extractor]
+    end
+
+    Debezium[Debezium]
+    Indexer[indexer]
+
+    
+    Debezium -->|2. 이벤트 발행| outbox_topic
+    Debezium -->|1. 변경 감지| analysis_result
+    Listener -->|2. 분석 요청| Service
+    Listener -->|1. 이벤트 소비| article_topic
+    Listener -->|3. 실패 시 발행| dlq_topic
+    Service -->|1. 정제 요청| Refiner
+    Service -->|2. 추출 요청| Extractors
+    Service -->|3. 저장 요청| analysis_result
+    DlqListener -->|2. 재분석 요청| Service
+    DlqListener -->|1. 재시도 소비| dlq_topic
+    Indexer -->|이벤트 소비| outbox_topic
+
+    classDef app fill:#616161,stroke:#212121,color:#fff
+    class Listener,DlqListener,Service,Refiner,Extractors app
 ```
 
-**분석 파이프라인 단계**:
-1. **이벤트 수신**: Kafka에서 기사 CDC 이벤트 배치 소비
-2. **기사 정제**: LLM으로 원본 기사를 정제하고 요약 생성
-3. **병렬 분석**: 5개 분석 작업 동시 실행 (사건유형, 긴급도, 위치, 키워드, 주제)
-4. **결과 저장**: 정규화 테이블 + Outbox 테이블에 단일 트랜잭션으로 저장
-5. **이벤트 발행**: Debezium CDC가 Outbox 테이블 감지 → Kafka 토픽 발행
+**정상 흐름**:
+1. **이벤트 소비**: `ArticleEventListener`가 `lit.public.article` 토픽에서 기사 이벤트 배치 소비
+2. **분석 요청**: Listener가 `ArticleAnalysisService`에 분석 요청
+3. **기사 정제**: Service가 `ArticleRefiner`에 정제 요청 → LLM으로 제목·본문 정제 및 요약 생성
+4. **병렬 추출**: Service가 `5개 Extractor`에 추출 요청 → 사건유형, 긴급도, 위치, 키워드, 주제 동시 분석
+5. **결과 저장**: Service가 `analysis_result` 테이블에 저장 요청 (정규화 + Outbox 단일 트랜잭션)
+6. **CDC 발행**: `Debezium`이 Outbox 테이블 변경 감지 → `lit.public.analysis_result_outbox` 토픽에 이벤트 발행
+7. **indexer 소비**: `indexer`가 분석 결과 이벤트 소비 → OpenSearch 색인
+
+**실패 흐름 (DLQ)**:
+1. **실패 발행**: 분석 실패 시 `ArticleEventListener`가 `lit.analyzer.article-events.dlq` 토픽에 발행
+2. **재시도 소비**: `DlqEventListener`가 DLQ 토픽에서 단건 소비
+3. **재분석 요청**: DlqEventListener가 `ArticleAnalysisService`에 재분석 요청 (최대 3회)
 
 ## 핵심 컴포넌트
 
@@ -261,8 +296,8 @@ flowchart TD
 | `SPRING_AI_OPENAI_API_KEY` | O | - | OpenAI API 인증 키 |
 | `KAKAO_REST_API_KEY` | O | - | Kakao Local API 인증 키 |
 | `DB_URL` | - | `jdbc:postgresql://localhost:5432/lit_maindb` | PostgreSQL URL |
-| `DB_USERNAME` | - | `postgres` | DB 사용자 |
-| `DB_PASSWORD` | - | `postgres` | DB 비밀번호 |
+| `DB_USERNAME` | - | `lit` | DB 사용자 |
+| `DB_PASSWORD` | - | `lit@2006` | DB 비밀번호 |
 | `KAFKA_BOOTSTRAP_SERVERS` | - | `localhost:9092` | Kafka 브로커 |
 | `DLQ_MAX_RETRIES` | - | `3` | 최대 재시도 횟수 |
 

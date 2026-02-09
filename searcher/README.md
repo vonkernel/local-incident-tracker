@@ -196,7 +196,7 @@ GET /api/articles/search
 
 **사전 요구사항**:
 1. OpenSearch 실행 (`cd infrastructure && docker-compose up -d opensearch`)
-2. 인덱스 및 파이프라인 생성 (`cd infrastructure/opensearch && ./create-index.sh`)
+2. 인덱스 및 파이프라인 생성 (`./infrastructure/scripts/opensearch/create-index.sh`)
 
 ## 테스트
 

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18
     container_name: lit-maindb
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -12,12 +12,12 @@ services:
       - "-c"
       - "wal_level=logical"
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - lit_maindb_data:/var/lib/postgresql/data
+      - lit_maindb_data:/var/lib/postgresql
       - ./init-scripts:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5

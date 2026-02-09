@@ -18,8 +18,8 @@ plugins {
 }
 
 val dbUrl = System.getenv("DB_URL") ?: (project.findProperty("db.url") as? String ?: "jdbc:postgresql://localhost:5432/lit_maindb")
-val dbUser = System.getenv("DB_USER") ?: (project.findProperty("db.user") as? String ?: "postgres")
-val dbPassword = System.getenv("DB_PASSWORD") ?: (project.findProperty("db.password") as? String ?: "postgres")
+val dbUser = System.getenv("DB_USER") ?: (project.findProperty("db.user") as? String ?: "lit")
+val dbPassword = System.getenv("DB_PASSWORD") ?: (project.findProperty("db.password") as? String ?: "lit@2006")
 val migrationPath = "filesystem:${project.projectDir}/src/main/resources/db/migration"
 
 dependencies {
