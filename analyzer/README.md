@@ -296,8 +296,8 @@ flowchart LR
 | `SPRING_AI_OPENAI_API_KEY` | O | - | OpenAI API 인증 키 |
 | `KAKAO_REST_API_KEY` | O | - | Kakao Local API 인증 키 |
 | `DB_URL` | - | `jdbc:postgresql://localhost:5432/lit_maindb` | PostgreSQL URL |
-| `DB_USERNAME` | - | `postgres` | DB 사용자 |
-| `DB_PASSWORD` | - | `postgres` | DB 비밀번호 |
+| `DB_USERNAME` | - | `lit` | DB 사용자 |
+| `DB_PASSWORD` | - | `lit@2006` | DB 비밀번호 |
 | `KAFKA_BOOTSTRAP_SERVERS` | - | `localhost:9092` | Kafka 브로커 |
 | `DLQ_MAX_RETRIES` | - | `3` | 최대 재시도 횟수 |
 

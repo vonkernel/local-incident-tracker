@@ -197,8 +197,8 @@ Content-Type: application/json
 |------|:----:|--------|------|
 | `SAFETY_DATA_API_KEY` | O | - | Safety Data API 인증 키 |
 | `DB_URL` | - | `jdbc:postgresql://localhost:5432/lit_maindb` | PostgreSQL URL |
-| `DB_USERNAME` | - | `postgres` | DB 사용자 |
-| `DB_PASSWORD` | - | `postgres` | DB 비밀번호 |
+| `DB_USERNAME` | - | `lit` | DB 사용자 |
+| `DB_PASSWORD` | - | `lit@2006` | DB 비밀번호 |
 | `SERVER_PORT` | - | `8081` | 서버 포트 |
 
 ### 설정 파일

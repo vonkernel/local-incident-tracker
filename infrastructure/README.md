@@ -18,8 +18,8 @@ Local 개발 환경을 위한 인프라 구성 (PostgreSQL, Kafka, Debezium, Kaf
 `.env` 파일에서 DB 접속 정보와 서비스 포트를 관리합니다. `docker-compose.yml`과 모든 스크립트가 이 파일을 공유합니다.
 
 ```
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+POSTGRES_USER=lit
+POSTGRES_PASSWORD=lit@2006
 POSTGRES_DB=lit_maindb
 DB_CONTAINER=lit-maindb
 DEBEZIUM_PORT=18083
@@ -356,7 +356,7 @@ Debezium은 Kafka의 `debezium_connect_offsets` 토픽에도 현재 읽고 있�
 
 3. PostgreSQL WAL 설정 확인:
    ```bash
-   docker exec lit-maindb psql -U postgres -d lit_maindb -c "SHOW wal_level;"
+   docker exec lit-maindb psql -U lit -d lit_maindb -c "SHOW wal_level;"
    ```
    → `logical`이어야 함
 
