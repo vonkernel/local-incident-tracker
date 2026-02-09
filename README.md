@@ -21,12 +21,13 @@
 **데이터 흐름:**
 
 ```mermaid
-flowchart LR
+flowchart TD
 
     subgraph Command [Command Model]
         ODC[Original Data Collector]
-        DA[Data Analyzer]
     end
+
+    DA[Data Analyzer]
 
     subgraph Query [Query Model]
         IDX[Indexer]
